@@ -115,11 +115,9 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
     });
 
     const insights = [];
-    
-    // 1. Rendimiento Global
     const diff = totalM1_B - totalM1_A;
     const pct = totalM1_A > 0 ? ((diff / totalM1_A) * 100).toFixed(1) : 0;
-    const trend = diff >= 0 ? 'crecimiento al alza' : 'caída operativa';
+    const trend = diff >= 0 ? 'crecimiento' : 'caída operativa';
     const color = diff >= 0 ? 'text-emerald-400' : 'text-red-400';
     
     if (totalM1_A > 0) {
@@ -127,23 +125,44 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
         <span key="1">📊 <strong>Rendimiento {metricChart1}:</strong> El acumulado en {yearB} muestra un <span className={`${color} font-bold`}>{trend} del {Math.abs(pct)}%</span> en comparación con {yearA}.</span>
       );
     }
-
-    // 2. Punto Crítico Métrica 1
     if (maxM1_B.name) {
       insights.push(
         <span key="2">🎯 <strong>Pico de {metricChart1}:</strong> La máxima intensidad registrada en {yearB} ocurrió en la {dimLabel} <strong>{maxM1_B.name}</strong> ({maxM1_B.val.toLocaleString()}).</span>
       );
     }
-
-    // 3. Inferencia de Cruce Estratégico (Métrica 1 vs Métrica 2)
     if (maxM2_B.name && metricChart1 !== metricChart2) {
       insights.push(
-        <span key="3">💡 <strong>Alerta de Correlación:</strong> Se detectó un evento extremo de <strong>{metricChart2}</strong> en la {dimLabel} <strong>{maxM2_B.name}</strong>. Se recomienda a Gerencia evaluar si esto provocó un impacto en {metricChart1} durante esa semana o las inmediatamente posteriores.</span>
+        <span key="3">💡 <strong>Alerta Estratégica:</strong> Se detectó un evento extremo de <strong>{metricChart2}</strong> en la {dimLabel} <strong>{maxM2_B.name}</strong>. Evaluar si esto impactó la métrica principal.</span>
       );
     }
-
     return insights;
   }, [chartData, metricChart1, metricChart2, yearA, yearB, dimLabel]);
+
+  // 📥 EXPORTADOR EXCEL/CSV PROFESIONAL
+  const exportToCSV = () => {
+    const headers = [dimLabel, `${metricChart1} (${yearA})`, `${metricChart1} (${yearB})`, `${metricChart2} (${yearA})`, `${metricChart2} (${yearB})`];
+    const csvRows = [headers.join(',')];
+
+    chartData.forEach(row => {
+      csvRows.push([
+        row.name,
+        row[`${yearA}_m1`],
+        row[`${yearB}_m1`],
+        row[`${yearA}_m2`],
+        row[`${yearB}_m2`]
+      ].join(','));
+    });
+
+    const csvString = csvRows.join('\n');
+    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Reporte_Inteligencia_${yearB}_vs_${yearA}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   if (!data || data.length === 0 || baseMetrics.length === 0) return null;
 
@@ -151,28 +170,38 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
   const tooltipItemStyle = { color: '#f8fafc', fontWeight: 'bold' };
 
   return (
-    <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl shadow-2xl my-6 space-y-6">
+    <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl shadow-2xl my-6 space-y-6 relative">
       
-      {/* CABECERA */}
+      {/* CABECERA CON BOTÓN DE EXPORTACIÓN */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
         <div>
           <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
             <span className="text-blue-500">⚡</span> Tablero Analítico Multivariable Interanual
           </h3>
-          <p className="text-xs text-slate-400">Motor de cruce de datos con IA heurística integrada</p>
+          <p className="text-xs text-slate-400">Motor de cruce de datos con IA y Exportación</p>
         </div>
 
-        <div className="flex items-center gap-3 bg-slate-950 p-2 rounded-lg border border-slate-800 shadow-inner">
-          <label className="text-[10px] font-bold uppercase text-slate-400">Agrupar Eje X:</label>
-          <select
-            value={selectedDimension}
-            onChange={(e) => setSelectedDimension(e.target.value)}
-            className="bg-transparent text-emerald-400 text-xs font-bold outline-none cursor-pointer"
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 bg-slate-950 p-2 rounded-lg border border-slate-800 shadow-inner">
+            <label className="text-[10px] font-bold uppercase text-slate-400">Agrupar Eje X:</label>
+            <select
+              value={selectedDimension}
+              onChange={(e) => setSelectedDimension(e.target.value)}
+              className="bg-transparent text-emerald-400 text-xs font-bold outline-none cursor-pointer"
+            >
+              {dimensionCols.map((col, idx) => (
+                <option key={idx} value={col} className="bg-slate-900">{getBaseName(col)}</option>
+              ))}
+            </select>
+          </div>
+          
+          {/* 📥 BOTÓN DE DESCARGA PROFESIONAL */}
+          <button 
+            onClick={exportToCSV}
+            className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-2 px-4 rounded-lg shadow-lg flex items-center gap-2 transition-all"
           >
-            {dimensionCols.map((col, idx) => (
-              <option key={idx} value={col} className="bg-slate-900">{getBaseName(col)}</option>
-            ))}
-          </select>
+            <span>📥</span> Descargar Excel
+          </button>
         </div>
       </div>
 
@@ -313,7 +342,6 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
           ))}
         </div>
       </div>
-
     </div>
   );
 }
