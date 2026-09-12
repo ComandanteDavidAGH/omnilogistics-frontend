@@ -3,25 +3,45 @@ import { useState, useMemo } from 'react';
 import { ResponsiveContainer, BarChart, Bar, AreaChart, Area, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
 
 export default function DynamicCharts({ columns, data, yearA, yearB }) {
+  // Limpiador semántico refinado por sub-métricas
   const getBaseName = (rawCol) => {
     if (!rawCol) return '';
     const lower = rawCol.toLowerCase();
+    
+    // Dimensiones
     if (lower.includes('semana')) return 'Semana';
     if (lower.includes('cinta')) return 'Cinta';
+    if (lower.includes('finca')) return 'Finca';
+    if (lower.includes('fecha')) return 'Fecha';
+
+    // Subvariables agronómicas específicas
+    if (lower.includes('acumulado embolse')) return 'Acumulado Embolse';
+    if (lower.includes('por hectarea') || lower.includes('por hectárea')) return 'Embolse por Hectárea';
+    if (lower.includes('embolse') && !lower.includes('acumulado') && !lower.includes('hecta')) return 'Embolse Semanal';
     if (lower.includes('resiembra')) return 'Resiembras';
     if (lower.includes('lluvia')) return 'Lluvias';
     if (lower.includes('manos')) return 'Manos';
-    if (lower.includes('embolse')) return 'Embolse';
-    if (lower.includes('hectárea') || lower.includes('hectarea')) return 'Hectáreas';
+    if (lower.includes('premiun') || lower.includes('premium')) return 'Cajas Premium';
+    if (lower.includes('merma')) return 'Merma Procesada';
 
-    let clean = rawCol.split('|').map(p => p.trim()).filter(p => !/^\d{4}$/.test(p)).join(' ');
-    clean = clean.replace(/columna_\d+/gi, '').replace(/\b20\d{2}\b/g, '').replace(/-/g, ' ').replace(/\s*[|._-]?\s*\b\d+\b\s*$/g, '').replace(/\s+/g, ' ').trim();
+    let parts = rawCol.split('|').map(p => p.trim()).filter(p => !/^\d{4}$/.test(p));
+    let clean = parts.join(' ')
+      .replace(/columna_\d+/gi, '')
+      .replace(/\b20\d{2}\b/g, '')
+      .replace(/-/g, ' ')
+      .replace(/\s*[|._-]?\s*\b\d+\b\s*$/g, '') 
+      .replace(/\s+/g, ' ')
+      .trim();
+      
     return clean || rawCol.trim();
   };
 
   const dimensionCols = useMemo(() => {
     if (!columns) return [];
-    return columns.filter(c => c.toLowerCase().includes('semana') || c.toLowerCase().includes('cinta') || c.toLowerCase().includes('finca') || c.toLowerCase().includes('fecha'));
+    return columns.filter(c => {
+      const name = c.toLowerCase();
+      return name.includes('semana') || name.includes('cinta') || name.includes('finca') || name.includes('fecha');
+    });
   }, [columns]);
 
   const baseMetrics = useMemo(() => {
@@ -29,7 +49,8 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
     const metrics = new Set();
     columns.forEach(col => {
       if (dimensionCols.includes(col)) return;
-      if (data.some(row => !isNaN(parseFloat(row[col])) && row[col] !== '-')) metrics.add(getBaseName(col));
+      const isNumeric = data.some(row => !isNaN(parseFloat(row[col])) && row[col] !== '-');
+      if (isNumeric) metrics.add(getBaseName(col));
     });
     return Array.from(metrics).filter(m => m !== '');
   }, [columns, data, dimensionCols]);
@@ -40,14 +61,17 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
   const [chart1Type, setChart1Type] = useState('area'); 
   const [chart2Type, setChart2Type] = useState('bar');
 
+  // Asignación de columnas fijando la PRIMERA coincidencia por año
   const getColsForMetric = (metricName) => {
     if (!metricName || !columns) return { colA: null, colB: null };
     const matching = columns.filter(col => getBaseName(col) === metricName);
     let colA = null, colB = null;
+
     matching.forEach(col => {
-      if (col.includes(yearA)) colA = col;
-      if (col.includes(yearB)) colB = col;
+      if (col.includes(yearA) && !colA) colA = col;
+      if (col.includes(yearB) && !colB) colB = col;
     });
+
     if (!colA && matching.length > 0) colA = matching[0];
     if (!colB && matching.length > 1) colB = matching[1];
     return { colA, colB };
@@ -59,15 +83,18 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
   const chartData = useMemo(() => {
     if (!data || !selectedDimension) return [];
     const map = {};
+
     data.forEach(row => {
       const key = String(row[selectedDimension] || 'N/A').trim();
       if (!key || key === '-') return;
       if (!map[key]) map[key] = { name: key, m1_A: 0, m1_B: 0, m2_A: 0, m2_B: 0 };
+
       if (m1Cols.colA) { const v = parseFloat(row[m1Cols.colA]); if (!isNaN(v)) map[key].m1_A += v; }
-      if (m1Cols.colB) { const v = parseFloat(row[m1Cols.colB]); if (!isNaN(v)) map[key].m2_B += v; }
+      if (m1Cols.colB) { const v = parseFloat(row[m1Cols.colB]); if (!isNaN(v)) map[key].m1_B += v; }
       if (m2Cols.colA) { const v = parseFloat(row[m2Cols.colA]); if (!isNaN(v)) map[key].m2_A += v; }
       if (m2Cols.colB) { const v = parseFloat(row[m2Cols.colB]); if (!isNaN(v)) map[key].m2_B += v; }
     });
+
     return Object.values(map).slice(0, 52).map(item => ({
       name: item.name,
       [`${yearA}_m1`]: Math.round(item.m1_A * 100) / 100,
@@ -79,7 +106,6 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
 
   const dimLabel = getBaseName(selectedDimension);
 
-  // Totales calculados para la fila final de resumen
   const totals = useMemo(() => {
     let t1A = 0, t1B = 0, t2A = 0, t2B = 0;
     chartData.forEach(r => {
@@ -98,7 +124,6 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
     };
   }, [chartData, yearA, yearB]);
 
-  // Motor Heurístico de IA
   const rawInsights = useMemo(() => {
     if (!chartData || chartData.length === 0) return [];
     let maxM1_B = { name: '', val: -Infinity };
@@ -124,7 +149,6 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
     return insights;
   }, [chartData, metricChart1, metricChart2, yearA, yearB, dimLabel, totals]);
 
-  // 📥 GENERADOR DE INFORME EXCEL GERENCIAL FORMATEADO (.XLS)
   const exportToExecutiveExcel = () => {
     const tableHtml = `
       <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
