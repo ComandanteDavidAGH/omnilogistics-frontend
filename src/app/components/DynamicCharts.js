@@ -1,6 +1,6 @@
 'use client';
 import { useState, useMemo } from 'react';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Legend, ReferenceLine } from 'recharts';
+import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
 
 export default function DynamicCharts({ columns, data, yearA, yearB }) {
   const [isOpenMetrics, setIsOpenMetrics] = useState(false);
@@ -99,8 +99,7 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
         [yearA]: vA,
         [yearB]: vB,
         [selectedMetric]: vA,
-        [secondaryMetric || 'Métrica 2']: vSec,
-        'Variación Neta': Math.round((vB - vA) * 100) / 100
+        [secondaryMetric || 'Métrica 2']: vSec
       };
     });
   }, [data, selectedDimension, colYearA, colYearB, yearA, yearB, isMultiMetricMode, secondaryMetric, selectedMetric, columns]);
@@ -119,7 +118,7 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
             <span>📊</span> Tablero Adaptativo {isInterannualMode ? `(${yearA} vs ${yearB})` : 'de Rendimiento'}
           </h3>
           <p className="text-xs text-slate-400">
-            {isInterannualMode && "Modo Ultra: Análisis Interanual y Variación Neta"}
+            {isInterannualMode && "Modo Ultra: Análisis de Volumen y Curva de Tendencia Interanual"}
             {isMultiMetricMode && "Modo Avanzado: Comparativa Multivariable"}
             {!showSecondChart && "Modo Básico: Análisis de Estructura Simple"}
           </p>
@@ -145,14 +144,15 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
             <label className="text-[10px] font-bold uppercase text-slate-400 mb-1">Variable Activa (Eje Y):</label>
             <button
               onClick={() => setIsOpenMetrics(!isOpenMetrics)}
-              className="bg-slate-950 border border-slate-700 text-emerald-400 font-bold text-xs rounded-lg px-4 py-2 flex items-center justify-between gap-2 min-w-[160px] shadow-inner"
+              className="bg-slate-950 border border-slate-700 text-emerald-400 font-bold text-xs rounded-lg px-4 py-2 flex items-center justify-between gap-2 min-w-[200px] shadow-inner"
             >
-              <span>{selectedMetric}</span>
+              {/* truncate evita que un texto gigante rompa la caja */}
+              <span className="truncate max-w-[180px] text-left">{selectedMetric}</span>
               <span className="text-[10px] text-slate-400">{isOpenMetrics ? '▲' : '▼'}</span>
             </button>
 
             {isOpenMetrics && (
-              <div className="absolute top-14 right-0 z-50 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-2 w-56 max-h-60 overflow-y-auto space-y-1">
+              <div className="absolute top-14 right-0 z-50 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-2 w-72 max-h-60 overflow-y-auto space-y-1">
                 {baseMetrics.map((met, idx) => (
                   <label
                     key={idx}
@@ -167,7 +167,7 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
                       }}
                       className="rounded border-slate-700 bg-slate-950 text-blue-500 cursor-pointer"
                     />
-                    <span>{met}</span>
+                    <span className="truncate">{met}</span>
                   </label>
                 ))}
               </div>
@@ -177,10 +177,11 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
       </div>
 
       <div className={`grid grid-cols-1 ${showSecondChart ? 'lg:grid-cols-2' : ''} gap-6`}>
+        {/* GRÁFICO 1: BARRAS COMPARATIVAS */}
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
           <div className="mb-3 text-center">
-            <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-              {metLabel} POR {dimLabel}
+            <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider truncate px-2" title={`${metLabel} POR ${dimLabel}`}>
+              VOLUMEN: {metLabel} POR {dimLabel}
             </h4>
           </div>
           <div className="h-64 w-full">
@@ -191,7 +192,7 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
                 <YAxis stroke="#64748b" tick={{ fontSize: 10 }} />
                 <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc' }} />
                 <Legend wrapperStyle={{ fontSize: 11, paddingTop: '10px' }} />
-                
+
                 {isInterannualMode ? (
                   <>
                     <Bar dataKey={yearA} fill="#3b82f6" radius={[4, 4, 0, 0]} />
@@ -205,18 +206,19 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
           </div>
         </div>
 
+        {/* GRÁFICO 2: TENDENCIA EN LÍNEAS TEMPORALES (Tu petición) */}
         {showSecondChart && (
           <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
             <div className="mb-3 text-center">
-              <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+              <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider truncate px-2" title={`TENDENCIA INTERANUAL: ${metLabel}`}>
                 {isInterannualMode 
-                  ? `VARIACIÓN NETA DE ${metLabel} (${yearB} VS ${yearA})`
-                  : `${(secondaryMetric || '').toUpperCase()} POR ${dimLabel}`}
+                  ? `TENDENCIA INTERANUAL: ${metLabel}`
+                  : `TENDENCIA: ${(secondaryMetric || '').toUpperCase()}`}
               </h4>
             </div>
             <div className="h-64 w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData}>
+                <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                   <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 10 }} />
                   <YAxis stroke="#64748b" tick={{ fontSize: 10 }} />
@@ -225,13 +227,14 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
 
                   {isInterannualMode ? (
                     <>
-                      <ReferenceLine y={0} stroke="#94a3b8" strokeDasharray="3 3" />
-                      <Bar dataKey="Variación Neta" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                      {/* Las dos famosas líneas */}
+                      <Line type="monotone" dataKey={yearA} stroke="#3b82f6" strokeWidth={3} dot={{ r: 3, fill: '#3b82f6', stroke: '#1e293b', strokeWidth: 2 }} activeDot={{ r: 6 }} />
+                      <Line type="monotone" dataKey={yearB} stroke="#10b981" strokeWidth={3} dot={{ r: 3, fill: '#10b981', stroke: '#1e293b', strokeWidth: 2 }} activeDot={{ r: 6 }} />
                     </>
                   ) : (
-                    <Bar dataKey={secondaryMetric} fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                    <Line type="monotone" dataKey={secondaryMetric} stroke="#f59e0b" strokeWidth={3} dot={{ r: 3, fill: '#f59e0b', stroke: '#1e293b', strokeWidth: 2 }} />
                   )}
-                </BarChart>
+                </LineChart>
               </ResponsiveContainer>
             </div>
           </div>
