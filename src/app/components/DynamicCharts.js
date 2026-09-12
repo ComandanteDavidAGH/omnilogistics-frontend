@@ -5,7 +5,6 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGri
 export default function DynamicCharts({ columns, data, yearA, yearB }) {
   const [isOpenMetrics, setIsOpenMetrics] = useState(false);
 
-  // 1. Limpiador Semántico Universal de Nombres
   const getBaseName = (rawCol) => {
     if (!rawCol) return '';
     const lower = rawCol.toLowerCase();
@@ -23,7 +22,6 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
     return clean || rawCol.trim();
   };
 
-  // 2. Extraer Eje X (Dimensiones de Agrupación)
   const dimensionCols = useMemo(() => {
     if (!columns) return [];
     return columns.filter(c => {
@@ -32,7 +30,6 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
     });
   }, [columns]);
 
-  // 3. Extraer Eje Y (Métricas Numéricas Disponibles)
   const baseMetrics = useMemo(() => {
     if (!columns || !data) return [];
     const metrics = new Set();
@@ -47,7 +44,6 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
   const [selectedDimension, setSelectedDimension] = useState(dimensionCols[0] || columns?.[0] || '');
   const [selectedMetric, setSelectedMetric] = useState(baseMetrics[0] || '');
 
-  // 4. Mapeo de Columnas según la Métrica Activa
   const { colYearA, colYearB } = useMemo(() => {
     let colA = null, colB = null;
     if (!selectedMetric || !columns) return { colYearA: null, colYearB: null };
@@ -62,12 +58,10 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
     return { colYearA: colA, colYearB: colB };
   }, [columns, selectedMetric, yearA, yearB]);
 
-  // 5. EVALUACIÓN DE COMPLEJIDAD (Detección de Nivel)
   const isInterannualMode = Boolean(colYearA && colYearB && colYearA !== colYearB);
   const secondaryMetric = baseMetrics.find(m => m !== selectedMetric) || null;
   const isMultiMetricMode = Boolean(!isInterannualMode && secondaryMetric);
 
-  // 6. Cálculo de Datos Según el Modo Detectado
   const chartData = useMemo(() => {
     if (!data || !selectedDimension) return [];
     const map = {};
@@ -119,7 +113,6 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
 
   return (
     <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl shadow-xl my-6 space-y-6">
-      {/* BARRA SUPERIOR ADAPTATIVA */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
         <div>
           <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
@@ -183,10 +176,7 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
         </div>
       </div>
 
-      {/* DISPOSICIÓN DINÁMICA: 1 O 2 COLUMNAS SEGÚN MODO */}
       <div className={`grid grid-cols-1 ${showSecondChart ? 'lg:grid-cols-2' : ''} gap-6`}>
-        
-        {/* GRÁFICO 1: SIEMPRE PRESENTE */}
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
           <div className="mb-3 text-center">
             <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
@@ -215,7 +205,6 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
           </div>
         </div>
 
-        {/* GRÁFICO 2: SOLO SI EXISTE VARIACIÓN INTERANUAL O METRICA SECUNDARIA */}
         {showSecondChart && (
           <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
             <div className="mb-3 text-center">
@@ -247,7 +236,6 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
             </div>
           </div>
         )}
-
       </div>
     </div>
   );
