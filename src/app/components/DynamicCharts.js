@@ -1,6 +1,6 @@
 'use client';
 import { useState, useMemo } from 'react';
-import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend, ReferenceLine, Cell } from 'recharts';
+import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
 
 export default function DynamicCharts({ columns, data, yearA, yearB }) {
   const [isOpenMetrics, setIsOpenMetrics] = useState(false);
@@ -76,7 +76,7 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
   const secondaryMetric = baseMetrics.find(m => m !== selectedMetric) || null;
   const isMultiMetricMode = Boolean(!isInterannualMode && secondaryMetric);
 
-  // Procesamiento Matemático del Motor
+  // Procesamiento Matemático
   const chartData = useMemo(() => {
     if (!data || !selectedDimension) return [];
     const map = {};
@@ -113,8 +113,7 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
         [yearA]: vA,
         [yearB]: vB,
         [selectedMetric]: vA,
-        [secondaryMetric || 'Métrica 2']: vSec,
-        'Variación Neta': Math.round((vB - vA) * 100) / 100 // LA MAGIA DEL BALANCE
+        [secondaryMetric || 'Métrica 2']: vSec
       };
     });
   }, [data, selectedDimension, colYearA, colYearB, yearA, yearB, isMultiMetricMode, secondaryMetric, selectedMetric, columns]);
@@ -125,6 +124,10 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
   const metLabel = selectedMetric.toUpperCase();
   const showSecondChart = isInterannualMode || isMultiMetricMode;
 
+  // ESTILOS PARA CORREGIR EL TEXTO NEGRO DEL TOOLTIP
+  const tooltipStyle = { backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc' };
+  const tooltipItemStyle = { color: '#f8fafc', fontWeight: 'bold' };
+
   return (
     <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl shadow-xl my-6 space-y-6">
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
@@ -133,7 +136,7 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
             <span>📊</span> Tablero de Inteligencia {isInterannualMode ? `(${yearA} vs ${yearB})` : ''}
           </h3>
           <p className="text-xs text-slate-400">
-            {isInterannualMode ? "Modo Ultra: Tendencia Histórica vs. Balance Neto" : "Modo Básico"}
+            {isInterannualMode ? "Modo Ultra: Tendencia Histórica vs. Volumen Comparativo" : "Modo Básico"}
           </p>
         </div>
 
@@ -190,11 +193,11 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
 
       <div className={`grid grid-cols-1 ${showSecondChart ? 'lg:grid-cols-2' : ''} gap-6`}>
         
-        {/* GRÁFICO 1: TENDENCIA EN LÍNEAS (Para Interanual) o BARRAS (Para simple) */}
+        {/* GRÁFICO 1: TENDENCIA EN LÍNEAS */}
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
           <div className="mb-3 text-center">
             <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider truncate px-2">
-              {isInterannualMode ? `TENDENCIA: ${metLabel}` : `VOLUMEN: ${metLabel}`}
+              TENDENCIA: {metLabel}
             </h4>
           </div>
           <div className="h-64 w-full">
@@ -204,33 +207,33 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                   <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 10 }} />
                   <YAxis stroke="#64748b" tick={{ fontSize: 10 }} />
-                  <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc' }} />
+                  <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} />
                   <Legend wrapperStyle={{ fontSize: 11, paddingTop: '10px' }} />
                   <Line type="monotone" dataKey={yearA} stroke="#3b82f6" strokeWidth={3} dot={{ r: 3, fill: '#3b82f6', stroke: '#1e293b', strokeWidth: 2 }} activeDot={{ r: 6 }} />
                   <Line type="monotone" dataKey={yearB} stroke="#10b981" strokeWidth={3} dot={{ r: 3, fill: '#10b981', stroke: '#1e293b', strokeWidth: 2 }} activeDot={{ r: 6 }} />
                 </LineChart>
               ) : (
-                <BarChart data={chartData}>
+                <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                   <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 10 }} />
                   <YAxis stroke="#64748b" tick={{ fontSize: 10 }} />
-                  <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc' }} />
+                  <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} />
                   <Legend wrapperStyle={{ fontSize: 11, paddingTop: '10px' }} />
-                  <Bar dataKey={selectedMetric} fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                </BarChart>
+                  <Line type="monotone" dataKey={selectedMetric} stroke="#3b82f6" strokeWidth={3} dot={{ r: 3, fill: '#3b82f6', stroke: '#1e293b', strokeWidth: 2 }} />
+                </LineChart>
               )}
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* GRÁFICO 2: BALANCE NETO CON COLORES INTELIGENTES (Verde/Rojo) */}
+        {/* GRÁFICO 2: VOLUMEN COMPARATIVO LADO A LADO (BARRAS) */}
         {showSecondChart && (
           <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
             <div className="mb-3 text-center">
               <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider truncate px-2">
                 {isInterannualMode 
-                  ? `BALANCE NETO: ${yearB} VS ${yearA}`
-                  : `TENDENCIA: ${(secondaryMetric || '').toUpperCase()}`}
+                  ? `VOLUMEN COMPARATIVO: ${yearB} VS ${yearA}`
+                  : `TENDENCIA SECUNDARIA: ${(secondaryMetric || '').toUpperCase()}`}
               </h4>
             </div>
             <div className="h-64 w-full">
@@ -240,24 +243,20 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
                     <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                     <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 10 }} />
                     <YAxis stroke="#64748b" tick={{ fontSize: 10 }} />
-                    <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc' }} />
-                    <ReferenceLine y={0} stroke="#94a3b8" strokeDasharray="3 3" />
-                    {/* MAGIA VERDE/ROJO: Si la diferencia es positiva, verde. Si perdimos, rojo */}
-                    <Bar dataKey="Variación Neta" radius={[4, 4, 0, 0]}>
-                      {chartData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry['Variación Neta'] >= 0 ? '#10b981' : '#ef4444'} />
-                      ))}
-                    </Bar>
+                    <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} />
+                    <Legend wrapperStyle={{ fontSize: 11, paddingTop: '10px' }} />
+                    <Bar dataKey={yearA} fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey={yearB} fill="#10b981" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 ) : (
-                  <LineChart data={chartData}>
+                  <BarChart data={chartData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                     <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 10 }} />
                     <YAxis stroke="#64748b" tick={{ fontSize: 10 }} />
-                    <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc' }} />
+                    <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} />
                     <Legend wrapperStyle={{ fontSize: 11, paddingTop: '10px' }} />
-                    <Line type="monotone" dataKey={secondaryMetric} stroke="#f59e0b" strokeWidth={3} dot={{ r: 3, fill: '#f59e0b', stroke: '#1e293b', strokeWidth: 2 }} />
-                  </LineChart>
+                    <Bar dataKey={secondaryMetric} fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                  </BarChart>
                 )}
               </ResponsiveContainer>
             </div>
