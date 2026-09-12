@@ -5,11 +5,12 @@ import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tool
 export default function DynamicCharts({ columns, data, yearA, yearB }) {
   const [isOpenMetrics, setIsOpenMetrics] = useState(false);
 
-  // 1. Limpiador Semántico (AHORA DESTRUYE LOS " 1", ".1", "_1" DE PANDAS)
+  // 1. DESTRUCTOR DE SUFIJOS AGRESIVO
   const getBaseName = (rawCol) => {
     if (!rawCol) return '';
     const lower = rawCol.toLowerCase();
     
+    // Reglas de negocio
     if (lower.includes('semana')) return 'Semana';
     if (lower.includes('cinta')) return 'Cinta';
     if (lower.includes('resiembra')) return 'Resiembras';
@@ -18,14 +19,17 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
     if (lower.includes('embolse')) return 'Embolse';
     if (lower.includes('hectárea') || lower.includes('hectarea')) return 'Hectáreas';
 
-    let clean = rawCol.split('|').map(p => p.trim()).filter(p => !/^\d{4}$/.test(p)).join(' ');
-    
-    // Destruimos años, guiones, y los malditos sufijos de duplicados (ej: " 1", ".1")
+    // 1. Separar por jerarquías y eliminar años
+    let parts = rawCol.split('|').map(p => p.trim());
+    parts = parts.filter(p => !/^\d{4}$/.test(p)); // Elimina "2024", "2025"
+    let clean = parts.join(' ');
+
+    // 2. Destrucción total de sufijos numéricos (ej: " 1", ".1", "_1", " | 1") incluso con espacios al final
     clean = clean
       .replace(/columna_\d+/gi, '')
       .replace(/\b20\d{2}\b/g, '')
       .replace(/-/g, ' ')
-      .replace(/[\.\s_][1-9]$/g, '') // 🔥 ESTA ES LA MAGIA QUE ELIMINA EL " 1" 🔥
+      .replace(/\s*[|._-]?\s*\b\d+\b\s*$/g, '') // 🔥 ELIMINA CUALQUIER NÚMERO AL FINAL 🔥
       .replace(/\s+/g, ' ')
       .trim();
       
@@ -54,31 +58,31 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
   const [selectedDimension, setSelectedDimension] = useState(dimensionCols[0] || columns?.[0] || '');
   const [selectedMetric, setSelectedMetric] = useState(baseMetrics[0] || '');
 
-  // 2. CONEXIÓN INTELIGENTE DE AÑOS (Incluso si no dicen "2024" o "2025")
-  const { colYearA, colYearB } = useMemo(() => {
-    if (!selectedMetric || !columns) return { colYearA: null, colYearB: null };
+  // 2. EMPAREJAMIENTO DE AÑOS
+  const { colYearA, colYearB, debugMatching } = useMemo(() => {
+    if (!selectedMetric || !columns) return { colYearA: null, colYearB: null, debugMatching: [] };
 
-    // Buscamos todas las columnas originales que pertenecen a esta métrica
+    // Filtramos todas las columnas que, tras limpiarlas, se llaman igual a la métrica seleccionada
     const matchingCols = columns.filter(col => getBaseName(col) === selectedMetric);
     
     let colA = null, colB = null;
     let foundByYear = false;
 
-    // Intento 1: Buscar si la columna explícitamente dice "2024" o "2025"
+    // Buscar por texto de año explícito
     matchingCols.forEach(col => {
       if (col.includes(yearA)) { colA = col; foundByYear = true; }
       if (col.includes(yearB)) { colB = col; foundByYear = true; }
     });
 
-    // 🔥 Intento 2: MAGIA. Si las columnas son idénticas (Pandas puso un " 1"), las asignamos por orden de aparición
+    // Si no tienen el año escrito, pero son 2 columnas idénticas, asume que la 1ra es Año A y la 2da es Año B
     if (!foundByYear && matchingCols.length > 0) {
-      colA = matchingCols[0]; // La primera que aparezca en el Excel va al Año A (Ej: 2024)
+      colA = matchingCols[0];
       if (matchingCols.length > 1) {
-        colB = matchingCols[1]; // La segunda que aparezca va al Año B (Ej: 2025)
+        colB = matchingCols[1];
       }
     }
 
-    return { colYearA: colA, colYearB: colB };
+    return { colYearA: colA, colYearB: colB, debugMatching: matchingCols };
   }, [columns, selectedMetric, yearA, yearB]);
 
   const isInterannualMode = Boolean(colYearA && colYearB && colYearA !== colYearB);
@@ -199,7 +203,7 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
       </div>
 
       <div className={`grid grid-cols-1 ${showSecondChart ? 'lg:grid-cols-2' : ''} gap-6`}>
-        {/* GRÁFICO 1: BARRAS COMPARATIVAS */}
+        {/* GRÁFICO 1 */}
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
           <div className="mb-3 text-center">
             <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider truncate px-2" title={`${metLabel} POR ${dimLabel}`}>
@@ -228,7 +232,7 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
           </div>
         </div>
 
-        {/* GRÁFICO 2: TENDENCIA EN LÍNEAS TEMPORALES */}
+        {/* GRÁFICO 2 */}
         {showSecondChart && (
           <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
             <div className="mb-3 text-center">
@@ -260,6 +264,12 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
             </div>
           </div>
         )}
+      </div>
+
+      {/* 🔥 PANEL DE DIAGNÓSTICO OCULTO (Solo visible para nosotros) 🔥 */}
+      <div className="mt-4 p-3 bg-slate-950 border border-slate-800 rounded-lg text-[10px] text-slate-500 font-mono overflow-x-auto">
+        <strong>Modo de Cruce:</strong> {isInterannualMode ? 'INTERANUAL (Modo Ultra)' : 'BÁSICO (Multivariable)'} <br/>
+        <strong>Columnas encontradas para "{selectedMetric}":</strong> {JSON.stringify(debugMatching)}
       </div>
     </div>
   );
