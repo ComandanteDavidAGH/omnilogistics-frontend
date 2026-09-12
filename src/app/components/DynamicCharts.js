@@ -2,123 +2,142 @@
 import { useState, useMemo } from 'react';
 import { ResponsiveContainer, BarChart, Bar, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
 
-export default function DynamicCharts({ columns, data }) {
-  // Función para extraer un título limpio sin ruido de Excel (ej: "SEMANA-CAJAS -EMBOLSE | 2025" -> "Embolse 2025")
-  const cleanTitle = (rawCol) => {
+export default function DynamicCharts({ columns, data, yearA, yearB }) {
+  // Limpiador semántico universal para nombres de variables
+  const getBaseName = (rawCol) => {
     if (!rawCol) return '';
-    const parts = rawCol.split('|').map(p => p.trim());
-    if (parts.length > 1) {
-      // Tomar los últimos dos niveles jerárquicos significativos
-      return `${parts[parts.length - 2]} ${parts[parts.length - 1]}`.replace(/columna_\d+/gi, '').trim();
-    }
-    return rawCol.replace(/columna_\d+/gi, '').trim();
+    const lower = rawCol.toLowerCase();
+    
+    if (lower.includes('semana')) return 'Semana';
+    if (lower.includes('cinta')) return 'Cinta';
+    if (lower.includes('resiembra')) return 'Resiembras';
+    if (lower.includes('lluvia')) return 'Lluvias';
+    if (lower.includes('manos')) return 'Manos';
+    if (lower.includes('embolse')) return 'Embolse';
+    if (lower.includes('hectárea') || lower.includes('hectarea')) return 'Hectáreas';
+
+    let parts = rawCol.split('|').map(p => p.trim());
+    parts = parts.filter(p => !/^\d{4}$/.test(p));
+    let clean = parts.join(' ').replace(/columna_\d+/gi, '').trim();
+    clean = clean.replace(/\b20\d{2}\b/g, '').replace(/-/g, ' ').replace(/\s+/g, ' ').trim();
+    return clean || 'Métrica';
   };
 
-  // 1. Identificar dimensiones categóricas posibles (Eje X: Semana, Cinta, Finca, Producto, etc.)
   const dimensionCols = useMemo(() => {
     if (!columns) return [];
     return columns.filter(c => {
       const name = c.toLowerCase();
-      return name.includes('semana') || name.includes('cinta') || name.includes('finca') || name.includes('producto') || name.includes('cliente') || name.includes('fecha');
+      return name.includes('semana') || name.includes('cinta') || name.includes('finca') || name.includes('fecha');
     });
   }, [columns]);
 
-  // 2. Identificar métricas numéricas acumulables (Eje Y: Embolse, Cajas, Hectáreas, Ventas)
-  const metricCols = useMemo(() => {
-    if (!columns || !data || data.length === 0) return [];
-    return columns.filter(col => {
-      if (dimensionCols.includes(col)) return false;
-      return data.some(row => !isNaN(parseFloat(row[col])) && row[col] !== '-');
+  const baseMetrics = useMemo(() => {
+    if (!columns || !data) return [];
+    const metrics = new Set();
+    columns.forEach(col => {
+      if (dimensionCols.includes(col)) return;
+      const isNumeric = data.some(row => !isNaN(parseFloat(row[col])) && row[col] !== '-');
+      if (isNumeric) {
+        metrics.add(getBaseName(col));
+      }
     });
+    return Array.from(metrics).filter(m => m !== '');
   }, [columns, data, dimensionCols]);
 
-  // Estado para filtros interactivos del gráfico
   const [selectedDimension, setSelectedDimension] = useState(dimensionCols[0] || columns?.[0] || '');
-  const [selectedMetric, setSelectedMetric] = useState(metricCols[0] || '');
+  const [selectedBaseMetric, setSelectedBaseMetric] = useState(baseMetrics[0] || '');
 
-  // 3. Agrupar y Calcular Datos Dinámicos
+  const { colYearA, colYearB } = useMemo(() => {
+    let colA = null, colB = null;
+    if (!selectedBaseMetric || !columns) return { colYearA: null, colYearB: null };
+
+    columns.forEach(col => {
+      if (getBaseName(col) === selectedBaseMetric) {
+        if (col.includes(yearA)) colA = col;
+        if (col.includes(yearB)) colB = col;
+        if (!col.includes(yearA) && !col.includes(yearB) && !colA) colA = col;
+      }
+    });
+    return { colYearA: colA, colYearB: colB };
+  }, [columns, selectedBaseMetric, yearA, yearB]);
+
   const chartData = useMemo(() => {
-    if (!data || !selectedDimension || !selectedMetric) return [];
-
+    if (!data || !selectedDimension) return [];
     const map = {};
+
     data.forEach(row => {
       const key = String(row[selectedDimension] || 'N/A').trim();
       if (!key || key === '-') return;
 
-      const val = parseFloat(row[selectedMetric]);
-      const numericVal = isNaN(val) ? 0 : val;
+      if (!map[key]) map[key] = { name: key, valA: 0, valB: 0 };
 
-      if (!map[key]) {
-        map[key] = { name: key, valor: 0, conteo: 0 };
+      if (colYearA) {
+        const v = parseFloat(row[colYearA]);
+        if (!isNaN(v)) map[key].valA += v;
       }
-      map[key].valor += numericVal;
-      map[key].conteo += 1;
+      if (colYearB) {
+        const v = parseFloat(row[colYearB]);
+        if (!isNaN(v)) map[key].valB += v;
+      }
     });
 
-    // Devuelve ordenado por semana/categoría (máximo 40 ítems para legibilidad)
     return Object.values(map).slice(0, 40).map(item => ({
       name: item.name,
-      [cleanTitle(selectedMetric)]: Math.round(item.valor * 100) / 100,
-      promedio: Math.round((item.valor / (item.conteo || 1)) * 100) / 100
+      [yearA]: Math.round(item.valA * 100) / 100,
+      [yearB]: Math.round(item.valB * 100) / 100
     }));
-  }, [data, selectedDimension, selectedMetric]);
+  }, [data, selectedDimension, colYearA, colYearB, yearA, yearB]);
 
-  if (!data || data.length === 0 || metricCols.length === 0) return null;
+  if (!data || data.length === 0 || baseMetrics.length === 0) return null;
 
-  const metricLabel = cleanTitle(selectedMetric || metricCols[0]);
-  const dimensionLabel = cleanTitle(selectedDimension || dimensionCols[0]);
+  const dimLabel = getBaseName(selectedDimension).toUpperCase();
+  const metLabel = selectedBaseMetric.toUpperCase();
 
   return (
     <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl shadow-xl my-6 space-y-6">
-      {/* BARRA DE FILTROS INTERACTIVOS DEL GRÁFICO */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
         <div>
           <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
-            <span>📈</span> Analítica de Desempeño Agronómico / Logístico
+            <span>📊</span> Comparativa Interanual: {yearA} vs {yearB}
           </h3>
-          <p className="text-xs text-slate-400">Interactúa con los selectores para mutar las curvas de análisis</p>
+          <p className="text-xs text-slate-400">Analítica gerencial depurada</p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-          {/* Selector de Dimensión (Eje X) */}
+        <div className="flex flex-wrap items-center gap-3">
           <div className="flex flex-col">
-            <label className="text-[10px] font-bold uppercase text-slate-400 mb-1">Agrupar por (Eje X):</label>
+            <label className="text-[10px] font-bold uppercase text-slate-400 mb-1">Dimensión (Eje X):</label>
             <select
               value={selectedDimension}
               onChange={(e) => setSelectedDimension(e.target.value)}
-              className="bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-1.5 outline-none focus:border-blue-500"
+              className="bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-1.5 outline-none"
             >
               {dimensionCols.map((col, idx) => (
-                <option key={idx} value={col}>{cleanTitle(col)}</option>
+                <option key={idx} value={col}>{getBaseName(col)}</option>
               ))}
             </select>
           </div>
 
-          {/* Selector de Métrica (Eje Y) */}
           <div className="flex flex-col">
-            <label className="text-[10px] font-bold uppercase text-slate-400 mb-1">Métrica (Eje Y):</label>
+            <label className="text-[10px] font-bold uppercase text-slate-400 mb-1">Variable (Eje Y):</label>
             <select
-              value={selectedMetric}
-              onChange={(e) => setSelectedMetric(e.target.value)}
-              className="bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-1.5 outline-none focus:border-blue-500"
+              value={selectedBaseMetric}
+              onChange={(e) => setSelectedBaseMetric(e.target.value)}
+              className="bg-emerald-900/30 border border-emerald-700/50 text-emerald-400 font-bold text-xs rounded-lg px-3 py-1.5 outline-none"
             >
-              {metricCols.map((col, idx) => (
-                <option key={idx} value={col}>{cleanTitle(col)}</option>
+              {baseMetrics.map((met, idx) => (
+                <option key={idx} value={met}>{met}</option>
               ))}
             </select>
           </div>
         </div>
       </div>
 
-      {/* REJILLA DE GRÁFICOS INTERACTIVOS */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Gráfico 1: Barras de Volumen Acumulado */}
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
-          <div className="mb-3">
+          <div className="mb-3 text-center">
             <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-              Volumen Total de {metricLabel} por {dimensionLabel}
+              {metLabel} POR {dimLabel}
             </h4>
-            <p className="text-[11px] text-slate-500">Acumulado total según filtro activo</p>
           </div>
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -126,21 +145,20 @@ export default function DynamicCharts({ columns, data }) {
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                 <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 10 }} />
                 <YAxis stroke="#64748b" tick={{ fontSize: 10 }} />
-                <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc', fontSize: '12px' }} />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar dataKey={metricLabel} fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc' }} />
+                <Legend wrapperStyle={{ fontSize: 11, paddingTop: '10px' }} />
+                {colYearA && <Bar dataKey={yearA} fill="#3b82f6" radius={[4, 4, 0, 0]} />}
+                {colYearB && <Bar dataKey={yearB} fill="#10b981" radius={[4, 4, 0, 0]} />}
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Gráfico 2: Curva de Tendencia y Comportamiento */}
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
-          <div className="mb-3">
+          <div className="mb-3 text-center">
             <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-              Tendencia de {metricLabel}
+              TENDENCIA DE {metLabel}
             </h4>
-            <p className="text-[11px] text-slate-500">Comportamiento continuo entre periodos</p>
           </div>
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -148,8 +166,10 @@ export default function DynamicCharts({ columns, data }) {
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                 <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 10 }} />
                 <YAxis stroke="#64748b" tick={{ fontSize: 10 }} />
-                <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc', fontSize: '12px' }} />
-                <Area type="monotone" dataKey={metricLabel} stroke="#10b981" fill="#10b981" fillOpacity={0.2} />
+                <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc' }} />
+                <Legend wrapperStyle={{ fontSize: 11, paddingTop: '10px' }} />
+                {colYearA && <Area type="monotone" dataKey={yearA} stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.1} />}
+                {colYearB && <Area type="monotone" dataKey={yearB} stroke="#10b981" fill="#10b981" fillOpacity={0.1} />}
               </AreaChart>
             </ResponsiveContainer>
           </div>

@@ -1,157 +1,382 @@
 'use client';
-import { useState, useMemo } from 'react';
-import { ResponsiveContainer, BarChart, Bar, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
+import { useState, useRef } from 'react';
+import DynamicCharts from './components/DynamicCharts'; // AQUÍ IMPORTAMOS EL MOTOR DE GRÁFICOS
 
-export default function DynamicCharts({ columns, data }) {
-  // Función para extraer un título limpio sin ruido de Excel 
-  const cleanTitle = (rawCol) => {
-    if (!rawCol) return '';
-    const parts = rawCol.split('|').map(p => p.trim());
-    if (parts.length > 1) {
-      return `${parts[parts.length - 2]} ${parts[parts.length - 1]}`.replace(/columna_\d+/gi, '').trim();
+export default function Home() {
+  const [yearA, setYearA] = useState('2024');
+  const [yearB, setYearB] = useState('2025');
+  
+  const [file, setFile] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [matrixData, setMatrixData] = useState(null);
+  const [freezePanes, setFreezePanes] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  const fileInputRef = useRef(null);
+
+  const handleFileUpload = async () => {
+    if (!file) {
+      alert("Selecciona un archivo Excel primero.");
+      return;
     }
-    return rawCol.replace(/columna_\d+/gi, '').trim();
+
+    setIsLoading(true);
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const BACKEND_URL = "https://omnilogistics-backend-6bbn.onrender.com/api/procesar-matriz"; 
+      
+      const response = await fetch(BACKEND_URL, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.detail || "El servidor rechazó el archivo");
+      }
+
+      const data = await response.json();
+      setMatrixData(data);
+    } catch (error) {
+      console.error("Error al procesar:", error);
+      alert("❌ Fallo en el Servidor:\n" + error.message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  // 1. Identificar dimensiones categóricas posibles (Eje X)
-  const dimensionCols = useMemo(() => {
-    if (!columns) return [];
-    return columns.filter(c => {
-      const name = c.toLowerCase();
-      return name.includes('semana') || name.includes('cinta') || name.includes('finca') || name.includes('producto') || name.includes('cliente') || name.includes('fecha');
+  const handleClear = () => {
+    setFile(null);
+    setMatrixData(null);
+    setSearchTerm('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''; 
+    }
+  };
+
+  const exportToCSV = () => {
+    if (!matrixData || filteredRows.length === 0) return;
+    const cols = matrixData.columnas;
+    const header = cols.join(',');
+    const csvRows = filteredRows.map(row => {
+      return cols.map(col => {
+        let cellData = row[col] !== undefined && row[col] !== null ? String(row[col]) : '';
+        cellData = cellData.replace(/"/g, '""');
+        return `"${cellData}"`;
+      }).join(',');
     });
-  }, [columns]);
+    
+    const csvContent = [header, ...csvRows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `OmniLogistics_Reporte_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
-  // 2. Identificar métricas numéricas acumulables (Eje Y)
-  const metricCols = useMemo(() => {
-    if (!columns || !data || data.length === 0) return [];
-    return columns.filter(col => {
-      if (dimensionCols.includes(col)) return false;
-      return data.some(row => !isNaN(parseFloat(row[col])) && row[col] !== '-');
+  const formatValue = (val) => {
+    if (val === null || val === undefined || val === '' || val === '-') return '-';
+    if (typeof val === 'number') {
+      return Number.isInteger(val) ? val.toLocaleString('en-US') : val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    if (typeof val === 'string' && !isNaN(val) && val.trim() !== '') {
+      const num = parseFloat(val);
+      return Number.isInteger(num) ? num.toLocaleString('en-US') : num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    return val;
+  };
+
+  const renderHeaderTitle = (title) => {
+    if (!title) return '';
+    const parts = title.split('|').map(p => p.trim());
+    if (parts.length > 1) {
+      return (
+        <div className="flex flex-col items-center justify-center text-center leading-tight py-1 min-w-[120px]">
+          <span className="text-[9px] uppercase tracking-wider text-slate-400 font-normal">{parts[0]}</span>
+          <span className="text-[10px] uppercase font-semibold text-slate-200 mt-0.5">{parts[1]}</span>
+          {parts[2] && <span className="text-[11px] font-bold text-blue-400 mt-0.5">{parts[2]}</span>}
+        </div>
+      );
+    }
+    return <span className="text-[11px] font-semibold text-slate-200">{title}</span>;
+  };
+
+  const rowList = matrixData ? (matrixData.filas || matrixData.datos || matrixData.matriz || matrixData.data || []) : [];
+
+  const filteredRows = rowList.filter(row => {
+    if (!searchTerm) return true;
+    const term = searchTerm.toLowerCase();
+    return matrixData.columnas.some(col => 
+      String(row[col] || '').toLowerCase().includes(term)
+    );
+  });
+
+  const colStats = {};
+  if (matrixData && filteredRows.length > 0) {
+    matrixData.columnas.forEach(col => {
+      let sum = 0, count = 0;
+      filteredRows.forEach(row => {
+        const val = parseFloat(row[col]);
+        if (!isNaN(val)) { sum += val; count++; }
+      });
+      if (count > 0) { colStats[col] = { avg: sum / count, sum: sum }; }
     });
-  }, [columns, data, dimensionCols]);
+  }
 
-  // Estado para filtros interactivos del gráfico
-  const [selectedDimension, setSelectedDimension] = useState(dimensionCols[0] || columns?.[0] || '');
-  const [selectedMetric, setSelectedMetric] = useState(metricCols[0] || '');
+  // MOTOR DINÁMICO DE KPIS
+  const getDynamicKPIs = () => {
+    if (!matrixData || filteredRows.length === 0) return null;
+    const cols = matrixData.columnas;
 
-  // 3. Agrupar y Calcular Datos Dinámicos
-  const chartData = useMemo(() => {
-    if (!data || !selectedDimension || !selectedMetric) return [];
+    const numericCols = cols.filter(col => colStats[col] !== undefined);
 
-    const map = {};
-    data.forEach(row => {
-      const key = String(row[selectedDimension] || 'N/A').trim();
-      if (!key || key === '-') return;
+    const colEmbolse = cols.find(c => c.toUpperCase().includes('EMBOLSE'));
+    const colHa = cols.find(c => c.toUpperCase().includes('HECTAREA') || c.toUpperCase().includes('HECTÁREA'));
 
-      const val = parseFloat(row[selectedMetric]);
-      const numericVal = isNaN(val) ? 0 : val;
+    if (colEmbolse || colHa) {
+      const targetEmbolse = cols.find(c => c.toUpperCase().includes('EMBOLSE AÑOS') && c.includes(yearB)) || colEmbolse;
+      const targetHa = cols.find(c => (c.toUpperCase().includes('POR HECTAREA') || c.toUpperCase().includes('POR HECTÁREA')) && c.includes(yearB)) || colHa;
 
-      if (!map[key]) {
-        map[key] = { name: key, valor: 0, conteo: 0 };
+      return [
+        { title: 'Total Registros', value: matrixData.total_filas || filteredRows.length, icon: '🗓️', color: 'blue' },
+        { title: `Total Embolse (${yearB})`, value: colStats[targetEmbolse]?.sum || 0, icon: '📦', color: 'emerald' },
+        { title: `Promedio Embolse/Ha`, value: colStats[targetHa]?.avg || 0, icon: '🌱', color: 'purple', note: '*Métrica Agronómica' }
+      ];
+    }
+
+    const primaryCol = numericCols[0] || null;
+    const secondaryCol = numericCols[1] || null;
+
+    return [
+      { 
+        title: 'Registros Procesados', 
+        value: matrixData.total_filas || filteredRows.length, 
+        icon: '📊', 
+        color: 'blue' 
+      },
+      { 
+        title: primaryCol ? `Suma Total: ${primaryCol.split('|').pop().trim()}` : 'Metrica Principal', 
+        value: primaryCol ? colStats[primaryCol].sum : 0, 
+        icon: '💰', 
+        color: 'emerald' 
+      },
+      { 
+        title: secondaryCol ? `Promedio: ${secondaryCol.split('|').pop().trim()}` : 'Promedio General', 
+        value: secondaryCol ? colStats[secondaryCol].avg : 0, 
+        icon: '📈', 
+        color: 'purple' 
       }
-      map[key].valor += numericVal;
-      map[key].conteo += 1;
-    });
+    ];
+  };
 
-    // Devuelve ordenado por categoría (máximo 40 ítems para legibilidad)
-    return Object.values(map).slice(0, 40).map(item => ({
-      name: item.name,
-      [cleanTitle(selectedMetric)]: Math.round(item.valor * 100) / 100,
-      promedio: Math.round((item.valor / (item.conteo || 1)) * 100) / 100
-    }));
-  }, [data, selectedDimension, selectedMetric]);
+  const getCellColor = (val, colName) => {
+    const num = parseFloat(val);
+    if (isNaN(num) || !colStats[colName]) return 'text-slate-300';
+    
+    const avg = colStats[colName].avg;
+    if (avg === 0) return 'text-slate-300';
+    
+    const ratio = num / avg;
+    if (ratio > 1.15) return 'text-emerald-400 font-bold bg-emerald-950/30'; 
+    if (ratio < 0.85) return 'text-rose-400 font-bold bg-rose-950/30';       
+    
+    return 'text-slate-300';
+  };
 
-  if (!data || data.length === 0 || metricCols.length === 0) return null;
-
-  const metricLabel = cleanTitle(selectedMetric || metricCols[0]);
-  const dimensionLabel = cleanTitle(selectedDimension || dimensionCols[0]);
+  const kpis = getDynamicKPIs();
 
   return (
-    <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl shadow-xl my-6 space-y-6">
-      {/* BARRA DE FILTROS INTERACTIVOS DEL GRÁFICO */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
-        <div>
-          <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
-            <span>📈</span> Analítica de Desempeño
-          </h3>
-          <p className="text-xs text-slate-400">Interactúa con los selectores para mutar los gráficos</p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-          {/* Selector de Dimensión (Eje X) */}
-          <div className="flex flex-col">
-            <label className="text-[10px] font-bold uppercase text-slate-400 mb-1">Agrupar por (Eje X):</label>
-            <select
-              value={selectedDimension}
-              onChange={(e) => setSelectedDimension(e.target.value)}
-              className="bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-1.5 outline-none focus:border-blue-500"
-            >
-              {dimensionCols.map((col, idx) => (
-                <option key={idx} value={col}>{cleanTitle(col)}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Selector de Métrica (Eje Y) */}
-          <div className="flex flex-col">
-            <label className="text-[10px] font-bold uppercase text-slate-400 mb-1">Métrica (Eje Y):</label>
-            <select
-              value={selectedMetric}
-              onChange={(e) => setSelectedMetric(e.target.value)}
-              className="bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-1.5 outline-none focus:border-blue-500"
-            >
-              {metricCols.map((col, idx) => (
-                <option key={idx} value={col}>{cleanTitle(col)}</option>
-              ))}
-            </select>
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+      <header className="border-b border-slate-800 bg-slate-900 px-6 py-4 flex items-center justify-between">
+        <div className="flex items-center space-x-3">
+          <div className="bg-blue-600 text-white font-bold p-2 rounded-lg text-xs tracking-wider">OL</div>
+          <div>
+            <h1 className="text-base font-bold text-white tracking-tight">OmniLogistics OS</h1>
+            <p className="text-xs text-slate-400">Plataforma Universal de Análisis B2B</p>
           </div>
         </div>
-      </div>
+        <div className="flex items-center space-x-2">
+          <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse"></span>
+          <span className="text-xs text-slate-300 font-mono">Backend Render: Conectado</span>
+        </div>
+      </header>
 
-      {/* REJILLA DE GRÁFICOS INTERACTIVOS */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Gráfico 1: Barras de Volumen Acumulado */}
-        <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
-          <div className="mb-3">
-            <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-              Total de {metricLabel} por {dimensionLabel}
-            </h4>
+      <main className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6">
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-wrap gap-6 items-center justify-between shadow-lg">
+          <div className="flex items-center space-x-4 bg-slate-950 p-3 rounded-lg border border-slate-800 w-full md:w-auto">
+            <input 
+              type="file" 
+              accept=".xlsx, .xls, .csv"
+              ref={fileInputRef} 
+              onChange={(e) => setFile(e.target.files[0])}
+              className="text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-900/50 file:text-blue-300 hover:file:bg-blue-800/50 cursor-pointer"
+            />
+            
+            <div className="flex items-center space-x-2">
+              <button 
+                onClick={handleFileUpload}
+                disabled={isLoading || !file}
+                className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors shadow-md"
+              >
+                {isLoading ? 'Analizando...' : 'Procesar Excel'}
+              </button>
+
+              {(matrixData || file) && (
+                <button 
+                  onClick={handleClear}
+                  className="bg-slate-800 hover:bg-rose-900/80 text-slate-300 hover:text-rose-200 border border-slate-700 hover:border-rose-700 text-xs font-medium px-3 py-2 rounded-lg transition-colors shadow-md"
+                >
+                  ✕ Limpiar
+                </button>
+              )}
+            </div>
           </div>
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 10 }} />
-                <YAxis stroke="#64748b" tick={{ fontSize: 10 }} />
-                <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc', fontSize: '12px' }} />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar dataKey={metricLabel} fill="#3b82f6" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+
+          <div className="flex items-center space-x-6">
+            <label className="flex items-center space-x-2 cursor-pointer bg-slate-950 px-3 py-2 rounded-lg border border-slate-800 text-xs text-slate-300 hover:bg-slate-800 transition-colors">
+              <input 
+                type="checkbox"
+                checked={freezePanes}
+                onChange={(e) => setFreezePanes(e.target.checked)}
+                className="rounded border-slate-700 bg-slate-800 text-blue-600 cursor-pointer"
+              />
+              <span className="font-medium">Inmovilizar Paneles</span>
+            </label>
+
+            {/* SELECTORES DE AÑOS */}
+            <div className="flex items-center space-x-3">
+              <select value={yearA} onChange={(e) => setYearA(e.target.value)} className="bg-slate-800 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2 outline-none">
+                <option value="2024">2024</option>
+                <option value="2025">2025</option>
+              </select>
+              <span className="text-slate-500 text-sm">vs</span>
+              <select value={yearB} onChange={(e) => setYearB(e.target.value)} className="bg-slate-800 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2 outline-none">
+                <option value="2025">2025</option>
+                <option value="2026">2026</option>
+              </select>
+            </div>
           </div>
         </div>
 
-        {/* Gráfico 2: Curva de Tendencia */}
-        <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
-          <div className="mb-3">
-            <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-              Tendencia de {metricLabel}
-            </h4>
+        {matrixData ? (
+          <div className="space-y-4">
+            {kpis && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {kpis.map((kpi, idx) => (
+                  <div key={idx} className="bg-slate-900 p-5 rounded-xl border border-slate-800 flex items-center space-x-4 shadow-sm">
+                    <div className={`p-3 bg-${kpi.color}-900/30 text-${kpi.color}-400 rounded-lg border border-${kpi.color}-900/50 text-xl`}>
+                      {kpi.icon}
+                    </div>
+                    <div>
+                      <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mb-1">{kpi.title}</p>
+                      <h4 className="text-2xl font-bold text-slate-100 font-mono">{formatValue(kpi.value)}</h4>
+                      {kpi.note && <p className="text-[9px] text-slate-500 mt-1 font-mono">{kpi.note}</p>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* 🔥 AQUÍ ESTÁ EL COMPONENTE DE GRÁFICOS CON LOS AÑOS INYECTADOS 🔥 */}
+            <DynamicCharts columns={matrixData.columnas} data={filteredRows} yearA={yearA} yearB={yearB} />
+
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-1 shadow-lg">
+              <div className="flex flex-col sm:flex-row justify-between items-center bg-slate-950 p-4 rounded-t-lg border-b border-slate-800 gap-4">
+                <div className="flex items-center gap-3">
+                  <h3 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                    {matrixData.archivo}
+                  </h3>
+                  <span className="bg-emerald-900/40 text-emerald-400 text-xs font-semibold px-3 py-1 rounded-full border border-emerald-800 hidden md:inline-block">
+                    Modo Adaptativo 🚥
+                  </span>
+                </div>
+                
+                <div className="flex items-center space-x-3 w-full sm:w-auto">
+                  <div className="relative w-full sm:w-64">
+                    <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-500">🔍</span>
+                    <input
+                      type="text"
+                      placeholder="Filtrar datos..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded-lg pl-10 pr-3 py-2 outline-none focus:border-blue-500 transition-colors"
+                    />
+                  </div>
+                  <button 
+                    onClick={exportToCSV}
+                    className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-sm font-medium px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
+                  >
+                    <span>📥</span> Exportar
+                  </button>
+                </div>
+              </div>
+
+              <div className="overflow-auto rounded-b-lg max-h-[50vh] relative">
+                <table className="w-full text-left text-xs text-slate-300 border-collapse">
+                  <thead className="bg-slate-800 text-slate-200 sticky top-0 z-20">
+                    <tr>
+                      {matrixData.columnas?.map((col, idx) => {
+                        const isFirst = idx === 0 && freezePanes;
+                        return (
+                          <th 
+                            key={idx} 
+                            className={`p-2 border-b border-slate-700 whitespace-nowrap bg-slate-800 font-semibold text-center ${
+                              isFirst ? 'sticky left-0 z-30 border-r border-slate-700 bg-slate-800 shadow-md' : ''
+                            }`}
+                          >
+                            {renderHeaderTitle(col)}
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800 bg-slate-950 font-mono">
+                    {filteredRows.length > 0 ? (
+                      filteredRows.map((row, rowIndex) => (
+                        <tr key={rowIndex} className="hover:bg-slate-900/80 transition-colors">
+                          {matrixData.columnas.map((col, colIndex) => {
+                            const isFirst = colIndex === 0 && freezePanes;
+                            const cellClass = isFirst 
+                                ? 'sticky left-0 z-10 bg-slate-950 border-r border-slate-800 shadow-md font-bold text-blue-300' 
+                                : getCellColor(row[col], col);
+
+                            return (
+                              <td 
+                                key={colIndex} 
+                                className={`p-2 text-center whitespace-nowrap border-r border-slate-900 text-[11px] ${cellClass}`}
+                              >
+                                {formatValue(row[col])}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={matrixData.columnas?.length || 1} className="p-8 text-center text-slate-400">
+                          No se encontraron resultados para "{searchTerm}".
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 10 }} />
-                <YAxis stroke="#64748b" tick={{ fontSize: 10 }} />
-                <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc', fontSize: '12px' }} />
-                <Area type="monotone" dataKey={metricLabel} stroke="#10b981" fill="#10b981" fillOpacity={0.2} />
-              </AreaChart>
-            </ResponsiveContainer>
+        ) : (
+          <div className="bg-slate-900 border border-slate-800 rounded-xl min-h-[400px] flex flex-col items-center justify-center py-20 text-center shadow-lg">
+            <div className="w-12 h-12 bg-slate-800 rounded-full flex items-center justify-center mb-3 text-slate-400 text-xl">🚀</div>
+            <h3 className="text-slate-200 font-semibold text-base mb-1">Esperando Datos</h3>
+            <p className="text-slate-400 text-sm max-w-md">Sube cualquier archivo Excel o CSV para generar tableros y KPIs adaptativos en tiempo real.</p>
           </div>
-        </div>
-      </div>
+        )}
+      </main>
     </div>
   );
 }
