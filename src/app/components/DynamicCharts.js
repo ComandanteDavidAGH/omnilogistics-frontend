@@ -5,7 +5,6 @@ import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tool
 export default function DynamicCharts({ columns, data, yearA, yearB }) {
   const [isOpenMetrics, setIsOpenMetrics] = useState(false);
 
-  // Limpiador agresivo (Destruye los sufijos " 1" de Pandas)
   const getBaseName = (rawCol) => {
     if (!rawCol) return '';
     const lower = rawCol.toLowerCase();
@@ -52,7 +51,6 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
   const [selectedDimension, setSelectedDimension] = useState(dimensionCols[0] || columns?.[0] || '');
   const [selectedMetric, setSelectedMetric] = useState(baseMetrics[0] || '');
 
-  // Conexión Inteligente de Años
   const { colYearA, colYearB } = useMemo(() => {
     if (!selectedMetric || !columns) return { colYearA: null, colYearB: null };
     const matchingCols = columns.filter(col => getBaseName(col) === selectedMetric);
@@ -76,7 +74,6 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
   const secondaryMetric = baseMetrics.find(m => m !== selectedMetric) || null;
   const isMultiMetricMode = Boolean(!isInterannualMode && secondaryMetric);
 
-  // Procesamiento Matemático
   const chartData = useMemo(() => {
     if (!data || !selectedDimension) return [];
     const map = {};
@@ -124,7 +121,6 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
   const metLabel = selectedMetric.toUpperCase();
   const showSecondChart = isInterannualMode || isMultiMetricMode;
 
-  // ESTILOS PARA CORREGIR EL TEXTO NEGRO DEL TOOLTIP
   const tooltipStyle = { backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc' };
   const tooltipItemStyle = { color: '#f8fafc', fontWeight: 'bold' };
 
@@ -133,10 +129,10 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
         <div>
           <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
-            <span>📊</span> Tablero de Inteligencia {isInterannualMode ? `(${yearA} vs ${yearB})` : ''}
+            <span>📊</span> Tablero [v2.0 Dual] {isInterannualMode ? `(${yearA} vs ${yearB})` : ''}
           </h3>
           <p className="text-xs text-slate-400">
-            {isInterannualMode ? "Modo Ultra: Tendencia Histórica vs. Volumen Comparativo" : "Modo Básico"}
+            {isInterannualMode ? "Modo Ultra: Tendencia Histórica vs. Volumen Comparativo Lado a Lado" : "Modo Básico"}
           </p>
         </div>
 
@@ -226,7 +222,7 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
           </div>
         </div>
 
-        {/* GRÁFICO 2: VOLUMEN COMPARATIVO LADO A LADO (BARRAS) */}
+        {/* GRÁFICO 2: BARRAS DUALES COMPARA VOLUMEN LADO A LADO */}
         {showSecondChart && (
           <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
             <div className="mb-3 text-center">
