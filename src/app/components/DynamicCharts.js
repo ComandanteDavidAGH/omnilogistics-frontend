@@ -3,8 +3,6 @@ import { useState, useMemo } from 'react';
 import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
 
 export default function DynamicCharts({ columns, data, yearA, yearB }) {
-  const [isOpenMetrics, setIsOpenMetrics] = useState(false);
-
   const getBaseName = (rawCol) => {
     if (!rawCol) return '';
     const lower = rawCol.toLowerCase();
@@ -49,30 +47,27 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
   }, [columns, data, dimensionCols]);
 
   const [selectedDimension, setSelectedDimension] = useState(dimensionCols[0] || columns?.[0] || '');
-  const [selectedMetric, setSelectedMetric] = useState(baseMetrics[0] || '');
+  const [metricChart1, setMetricChart1] = useState(baseMetrics[0] || '');
+  const [metricChart2, setMetricChart2] = useState(baseMetrics[1] || baseMetrics[0] || '');
+  const [chart1Type, setChart1Type] = useState('line'); // 'line' | 'bar'
+  const [chart2Type, setChart2Type] = useState('bar');  // 'line' | 'bar'
 
-  const { colYearA, colYearB } = useMemo(() => {
-    if (!selectedMetric || !columns) return { colYearA: null, colYearB: null };
-    const matchingCols = columns.filter(col => getBaseName(col) === selectedMetric);
-    
+  // Mapeo dinámico de columnas por año para Métrica 1 y Métrica 2
+  const getColsForMetric = (metricName) => {
+    if (!metricName || !columns) return { colA: null, colB: null };
+    const matching = columns.filter(col => getBaseName(col) === metricName);
     let colA = null, colB = null;
-    let foundByYear = false;
-
-    matchingCols.forEach(col => {
-      if (col.includes(yearA)) { colA = col; foundByYear = true; }
-      if (col.includes(yearB)) { colB = col; foundByYear = true; }
+    matching.forEach(col => {
+      if (col.includes(yearA)) colA = col;
+      if (col.includes(yearB)) colB = col;
     });
+    if (!colA && matching.length > 0) colA = matching[0];
+    if (!colB && matching.length > 1) colB = matching[1];
+    return { colA, colB };
+  };
 
-    if (!foundByYear && matchingCols.length > 0) {
-      colA = matchingCols[0];
-      if (matchingCols.length > 1) colB = matchingCols[1];
-    }
-    return { colYearA: colA, colYearB: colB };
-  }, [columns, selectedMetric, yearA, yearB]);
-
-  const isInterannualMode = Boolean(colYearA && colYearB && colYearA !== colYearB);
-  const secondaryMetric = baseMetrics.find(m => m !== selectedMetric) || null;
-  const isMultiMetricMode = Boolean(!isInterannualMode && secondaryMetric);
+  const m1Cols = useMemo(() => getColsForMetric(metricChart1), [columns, metricChart1, yearA, yearB]);
+  const m2Cols = useMemo(() => getColsForMetric(metricChart2), [columns, metricChart2, yearA, yearB]);
 
   const chartData = useMemo(() => {
     if (!data || !selectedDimension) return [];
@@ -81,183 +76,156 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
     data.forEach(row => {
       const key = String(row[selectedDimension] || 'N/A').trim();
       if (!key || key === '-') return;
-      if (!map[key]) map[key] = { name: key, valA: 0, valB: 0, valSecondary: 0 };
+      if (!map[key]) map[key] = { name: key, m1_A: 0, m1_B: 0, m2_A: 0, m2_B: 0 };
 
-      if (colYearA) {
-        const v = parseFloat(row[colYearA]);
-        if (!isNaN(v)) map[key].valA += v;
-      }
-      if (colYearB) {
-        const v = parseFloat(row[colYearB]);
-        if (!isNaN(v)) map[key].valB += v;
-      }
-      if (isMultiMetricMode) {
-        const colSec = columns.find(c => getBaseName(c) === secondaryMetric);
-        if (colSec) {
-          const vSec = parseFloat(row[colSec]);
-          if (!isNaN(vSec)) map[key].valSecondary += vSec;
-        }
-      }
+      if (m1Cols.colA) { const v = parseFloat(row[m1Cols.colA]); if (!isNaN(v)) map[key].m1_A += v; }
+      if (m1Cols.colB) { const v = parseFloat(row[m1Cols.colB]); if (!isNaN(v)) map[key].m1_B += v; }
+      if (m2Cols.colA) { const v = parseFloat(row[m2Cols.colA]); if (!isNaN(v)) map[key].m2_A += v; }
+      if (m2Cols.colB) { const v = parseFloat(row[m2Cols.colB]); if (!isNaN(v)) map[key].m2_B += v; }
     });
 
-    return Object.values(map).slice(0, 40).map(item => {
-      const vA = Math.round(item.valA * 100) / 100;
-      const vB = Math.round(item.valB * 100) / 100;
-      const vSec = Math.round(item.valSecondary * 100) / 100;
-
-      return {
-        name: item.name,
-        [yearA]: vA,
-        [yearB]: vB,
-        [selectedMetric]: vA,
-        [secondaryMetric || 'Métrica 2']: vSec
-      };
-    });
-  }, [data, selectedDimension, colYearA, colYearB, yearA, yearB, isMultiMetricMode, secondaryMetric, selectedMetric, columns]);
+    return Object.values(map).slice(0, 40).map(item => ({
+      name: item.name,
+      [`${yearA}_m1`]: Math.round(item.m1_A * 100) / 100,
+      [`${yearB}_m1`]: Math.round(item.m1_B * 100) / 100,
+      [`${yearA}_m2`]: Math.round(item.m2_A * 100) / 100,
+      [`${yearB}_m2`]: Math.round(item.m2_B * 100) / 100,
+    }));
+  }, [data, selectedDimension, m1Cols, m2Cols, yearA, yearB]);
 
   if (!data || data.length === 0 || baseMetrics.length === 0) return null;
-
-  const dimLabel = getBaseName(selectedDimension).toUpperCase();
-  const metLabel = selectedMetric.toUpperCase();
-  const showSecondChart = isInterannualMode || isMultiMetricMode;
 
   const tooltipStyle = { backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc' };
   const tooltipItemStyle = { color: '#f8fafc', fontWeight: 'bold' };
 
   return (
     <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl shadow-xl my-6 space-y-6">
+      {/* CABECERA PRINCIPAL */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
         <div>
           <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
-            <span>📊</span> Tablero [v2.0 Dual] {isInterannualMode ? `(${yearA} vs ${yearB})` : ''}
+            <span>⚡</span> Tablero Analítico Multivariable Interanual
           </h3>
-          <p className="text-xs text-slate-400">
-            {isInterannualMode ? "Modo Ultra: Tendencia Histórica vs. Volumen Comparativo Lado a Lado" : "Modo Básico"}
-          </p>
+          <p className="text-xs text-slate-400">Compara dos métricas independientes de forma simultánea</p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex flex-col">
-            <label className="text-[10px] font-bold uppercase text-slate-400 mb-1">Eje X (Agrupar por):</label>
-            <select
-              value={selectedDimension}
-              onChange={(e) => setSelectedDimension(e.target.value)}
-              className="bg-slate-950 border border-slate-700 text-slate-100 text-xs font-semibold rounded-lg px-3 py-2 outline-none focus:border-blue-500 shadow-inner"
-            >
-              {dimensionCols.map((col, idx) => (
-                <option key={idx} value={col} className="bg-slate-900 text-slate-100 py-1">
-                  {getBaseName(col)}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex flex-col relative">
-            <label className="text-[10px] font-bold uppercase text-slate-400 mb-1">Variable Activa (Eje Y):</label>
-            <button
-              onClick={() => setIsOpenMetrics(!isOpenMetrics)}
-              className="bg-slate-950 border border-slate-700 text-emerald-400 font-bold text-xs rounded-lg px-4 py-2 flex items-center justify-between gap-2 min-w-[200px] shadow-inner"
-            >
-              <span className="truncate max-w-[180px] text-left">{selectedMetric}</span>
-              <span className="text-[10px] text-slate-400">{isOpenMetrics ? '▲' : '▼'}</span>
-            </button>
-
-            {isOpenMetrics && (
-              <div className="absolute top-14 right-0 z-50 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-2 w-72 max-h-60 overflow-y-auto space-y-1">
-                {baseMetrics.map((met, idx) => (
-                  <label
-                    key={idx}
-                    className="flex items-center space-x-3 px-3 py-2 hover:bg-slate-800 rounded-lg cursor-pointer text-xs font-medium text-slate-200 transition-colors"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedMetric === met}
-                      onChange={() => {
-                        setSelectedMetric(met);
-                        setIsOpenMetrics(false);
-                      }}
-                      className="rounded border-slate-700 bg-slate-950 text-blue-500 cursor-pointer"
-                    />
-                    <span className="truncate">{met}</span>
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
+        <div className="flex items-center gap-3">
+          <label className="text-[10px] font-bold uppercase text-slate-400">Agrupar Eje X:</label>
+          <select
+            value={selectedDimension}
+            onChange={(e) => setSelectedDimension(e.target.value)}
+            className="bg-slate-950 border border-slate-700 text-slate-100 text-xs font-semibold rounded-lg px-3 py-2 outline-none focus:border-blue-500"
+          >
+            {dimensionCols.map((col, idx) => (
+              <option key={idx} value={col}>{getBaseName(col)}</option>
+            ))}
+          </select>
         </div>
       </div>
 
-      <div className={`grid grid-cols-1 ${showSecondChart ? 'lg:grid-cols-2' : ''} gap-6`}>
+      {/* REJILLA DE GRÁFICOS INDEPENDIENTES */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
-        {/* GRÁFICO 1: TENDENCIA EN LÍNEAS */}
-        <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
-          <div className="mb-3 text-center">
-            <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider truncate px-2">
-              TENDENCIA: {metLabel}
-            </h4>
+        {/* GRÁFICO 1: MÉTRICA A */}
+        <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-800/60">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-blue-400 font-bold">Métrica 1:</span>
+              <select
+                value={metricChart1}
+                onChange={(e) => setMetricChart1(e.target.value)}
+                className="bg-slate-900 border border-slate-700 text-slate-100 text-xs font-bold rounded px-2 py-1 outline-none"
+              >
+                {baseMetrics.map((m, idx) => (
+                  <option key={idx} value={m}>{m}</option>
+                ))}
+              </select>
+            </div>
+            <button
+              onClick={() => setChart1Type(chart1Type === 'line' ? 'bar' : 'line')}
+              className="text-[10px] bg-slate-900 border border-slate-700 px-2 py-1 rounded text-slate-300 font-semibold"
+            >
+              {chart1Type === 'line' ? '📈 Líneas' : '📊 Barras'}
+            </button>
           </div>
+
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              {isInterannualMode ? (
+              {chart1Type === 'line' ? (
                 <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                   <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 10 }} />
                   <YAxis stroke="#64748b" tick={{ fontSize: 10 }} />
                   <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} />
-                  <Legend wrapperStyle={{ fontSize: 11, paddingTop: '10px' }} />
-                  <Line type="monotone" dataKey={yearA} stroke="#3b82f6" strokeWidth={3} dot={{ r: 3, fill: '#3b82f6', stroke: '#1e293b', strokeWidth: 2 }} activeDot={{ r: 6 }} />
-                  <Line type="monotone" dataKey={yearB} stroke="#10b981" strokeWidth={3} dot={{ r: 3, fill: '#10b981', stroke: '#1e293b', strokeWidth: 2 }} activeDot={{ r: 6 }} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Line name={`${metricChart1} (${yearA})`} type="monotone" dataKey={`${yearA}_m1`} stroke="#3b82f6" strokeWidth={3} dot={{ r: 3 }} />
+                  <Line name={`${metricChart1} (${yearB})`} type="monotone" dataKey={`${yearB}_m1`} stroke="#10b981" strokeWidth={3} dot={{ r: 3 }} />
                 </LineChart>
+              ) : (
+                <BarChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                  <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 10 }} />
+                  <YAxis stroke="#64748b" tick={{ fontSize: 10 }} />
+                  <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar name={`${metricChart1} (${yearA})`} dataKey={`${yearA}_m1`} fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                  <Bar name={`${metricChart1} (${yearB})`} dataKey={`${yearB}_m1`} fill="#10b981" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              )}
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* GRÁFICO 2: MÉTRICA B (CRUZADA) */}
+        <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-800/60">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-amber-400 font-bold">Métrica 2 (Cruze):</span>
+              <select
+                value={metricChart2}
+                onChange={(e) => setMetricChart2(e.target.value)}
+                className="bg-slate-900 border border-slate-700 text-slate-100 text-xs font-bold rounded px-2 py-1 outline-none"
+              >
+                {baseMetrics.map((m, idx) => (
+                  <option key={idx} value={m}>{m}</option>
+                ))}
+              </select>
+            </div>
+            <button
+              onClick={() => setChart2Type(chart2Type === 'line' ? 'bar' : 'line')}
+              className="text-[10px] bg-slate-900 border border-slate-700 px-2 py-1 rounded text-slate-300 font-semibold"
+            >
+              {chart2Type === 'line' ? '📈 Líneas' : '📊 Barras'}
+            </button>
+          </div>
+
+          <div className="h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              {chart2Type === 'bar' ? (
+                <BarChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                  <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 10 }} />
+                  <YAxis stroke="#64748b" tick={{ fontSize: 10 }} />
+                  <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar name={`${metricChart2} (${yearA})`} dataKey={`${yearA}_m2`} fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                  <Bar name={`${metricChart2} (${yearB})`} dataKey={`${yearB}_m2`} fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                </BarChart>
               ) : (
                 <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                   <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 10 }} />
                   <YAxis stroke="#64748b" tick={{ fontSize: 10 }} />
                   <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} />
-                  <Legend wrapperStyle={{ fontSize: 11, paddingTop: '10px' }} />
-                  <Line type="monotone" dataKey={selectedMetric} stroke="#3b82f6" strokeWidth={3} dot={{ r: 3, fill: '#3b82f6', stroke: '#1e293b', strokeWidth: 2 }} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Line name={`${metricChart2} (${yearA})`} type="monotone" dataKey={`${yearA}_m2`} stroke="#f59e0b" strokeWidth={3} dot={{ r: 3 }} />
+                  <Line name={`${metricChart2} (${yearB})`} type="monotone" dataKey={`${yearB}_m2`} stroke="#8b5cf6" strokeWidth={3} dot={{ r: 3 }} />
                 </LineChart>
               )}
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* GRÁFICO 2: BARRAS DUALES COMPARA VOLUMEN LADO A LADO */}
-        {showSecondChart && (
-          <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
-            <div className="mb-3 text-center">
-              <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider truncate px-2">
-                {isInterannualMode 
-                  ? `VOLUMEN COMPARATIVO: ${yearB} VS ${yearA}`
-                  : `TENDENCIA SECUNDARIA: ${(secondaryMetric || '').toUpperCase()}`}
-              </h4>
-            </div>
-            <div className="h-64 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                {isInterannualMode ? (
-                  <BarChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                    <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 10 }} />
-                    <YAxis stroke="#64748b" tick={{ fontSize: 10 }} />
-                    <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} />
-                    <Legend wrapperStyle={{ fontSize: 11, paddingTop: '10px' }} />
-                    <Bar dataKey={yearA} fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey={yearB} fill="#10b981" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                ) : (
-                  <BarChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                    <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 10 }} />
-                    <YAxis stroke="#64748b" tick={{ fontSize: 10 }} />
-                    <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} />
-                    <Legend wrapperStyle={{ fontSize: 11, paddingTop: '10px' }} />
-                    <Bar dataKey={secondaryMetric} fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                )}
-              </ResponsiveContainer>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
