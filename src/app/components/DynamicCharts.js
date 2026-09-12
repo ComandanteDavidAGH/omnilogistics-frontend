@@ -1,6 +1,6 @@
 'use client';
 import { useState, useMemo } from 'react';
-import { ResponsiveContainer, BarChart, Bar, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
+import { ResponsiveContainer, BarChart, Bar, AreaChart, Area, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
 
 export default function DynamicCharts({ columns, data, yearA, yearB }) {
   const getBaseName = (rawCol) => {
@@ -94,10 +94,9 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
 
   const dimLabel = getBaseName(selectedDimension);
 
-  // 🧠 MOTOR DE IA: GENERADOR DE OBSERVACIONES EJECUTIVAS
-  const aiInsights = useMemo(() => {
+  // 🧠 MOTOR DE IA EXTRACTIVO (Texto puro para Excel y PDF)
+  const rawInsights = useMemo(() => {
     if (!chartData || chartData.length === 0) return [];
-    
     let totalM1_A = 0, totalM1_B = 0;
     let maxM1_B = { name: '', val: -Infinity };
     let maxM2_B = { name: '', val: -Infinity };
@@ -106,10 +105,8 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
       const vM1_A = d[`${yearA}_m1`] || 0;
       const vM1_B = d[`${yearB}_m1`] || 0;
       const vM2_B = d[`${yearB}_m2`] || 0;
-
       totalM1_A += vM1_A;
       totalM1_B += vM1_B;
-
       if (vM1_B > maxM1_B.val) maxM1_B = { name: d.name, val: vM1_B };
       if (vM2_B > maxM2_B.val) maxM2_B = { name: d.name, val: vM2_B };
     });
@@ -117,73 +114,146 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
     const insights = [];
     const diff = totalM1_B - totalM1_A;
     const pct = totalM1_A > 0 ? ((diff / totalM1_A) * 100).toFixed(1) : 0;
-    const trend = diff >= 0 ? 'crecimiento' : 'caída operativa';
-    const color = diff >= 0 ? 'text-emerald-400' : 'text-red-400';
+    const trend = diff >= 0 ? 'crecimiento al alza' : 'caída operativa';
     
     if (totalM1_A > 0) {
-      insights.push(
-        <span key="1">📊 <strong>Rendimiento {metricChart1}:</strong> El acumulado en {yearB} muestra un <span className={`${color} font-bold`}>{trend} del {Math.abs(pct)}%</span> en comparación con {yearA}.</span>
-      );
+      insights.push(`RENDIMIENTO GLOBAL: El acumulado en ${yearB} muestra un ${trend} del ${Math.abs(pct)}% en "${metricChart1}" en comparación con ${yearA}.`);
     }
     if (maxM1_B.name) {
-      insights.push(
-        <span key="2">🎯 <strong>Pico de {metricChart1}:</strong> La máxima intensidad registrada en {yearB} ocurrió en la {dimLabel} <strong>{maxM1_B.name}</strong> ({maxM1_B.val.toLocaleString()}).</span>
-      );
+      insights.push(`PICO DE PRODUCCIÓN: La máxima intensidad de "${metricChart1}" registrada en ${yearB} ocurrió en ${dimLabel} ${maxM1_B.name} con un valor de ${maxM1_B.val.toLocaleString()}.`);
     }
     if (maxM2_B.name && metricChart1 !== metricChart2) {
-      insights.push(
-        <span key="3">💡 <strong>Alerta Estratégica:</strong> Se detectó un evento extremo de <strong>{metricChart2}</strong> en la {dimLabel} <strong>{maxM2_B.name}</strong>. Evaluar si esto impactó la métrica principal.</span>
-      );
+      insights.push(`ALERTA DE CRUCE: Se detectó un evento extremo de "${metricChart2}" en ${dimLabel} ${maxM2_B.name}. Se recomienda evaluar si esto provocó un impacto en el rendimiento.`);
     }
     return insights;
   }, [chartData, metricChart1, metricChart2, yearA, yearB, dimLabel]);
 
-  // 📥 EXPORTADOR EXCEL/CSV PROFESIONAL
-  const exportToCSV = () => {
-    const headers = [dimLabel, `${metricChart1} (${yearA})`, `${metricChart1} (${yearB})`, `${metricChart2} (${yearA})`, `${metricChart2} (${yearB})`];
-    const csvRows = [headers.join(',')];
+  // 📥 EXPORTADOR EXCEL PROFESIONAL (ESTILO GERENCIAL HTML -> XLS)
+  const exportToExecutiveExcel = () => {
+    let tableHtml = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <meta charset="utf-8" />
+        <style>
+          table { border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; }
+          .title { background-color: #1e293b; color: #ffffff; font-size: 18px; font-weight: bold; text-align: center; padding: 10px; }
+          .subtitle { background-color: #f1f5f9; color: #0f172a; font-size: 14px; font-weight: bold; padding: 8px; }
+          .insight { background-color: #e0f2fe; color: #0369a1; font-size: 12px; padding: 5px; }
+          th { background-color: #3b82f6; color: white; border: 1px solid #cbd5e1; padding: 8px; text-align: center; font-weight: bold;}
+          td { border: 1px solid #cbd5e1; padding: 6px; text-align: center; }
+        </style>
+      </head>
+      <body>
+        <table>
+          <tr><td colspan="5" class="title">REPORTE GERENCIAL: ${metricChart1} vs ${metricChart2} (${yearA} - ${yearB})</td></tr>
+          <tr><td colspan="5" class="subtitle">Observaciones Generadas por OmniLogistics AI:</td></tr>
+          ${rawInsights.map(ins => `<tr><td colspan="5" class="insight">• ${ins}</td></tr>`).join('')}
+          <tr><td colspan="5"></td></tr>
+          <tr>
+            <th>${dimLabel}</th>
+            <th>${metricChart1} (${yearA})</th>
+            <th>${metricChart1} (${yearB})</th>
+            <th>${metricChart2} (${yearA})</th>
+            <th>${metricChart2} (${yearB})</th>
+          </tr>
+          ${chartData.map(row => `
+            <tr>
+              <td>${row.name}</td>
+              <td>${row[`${yearA}_m1`]}</td>
+              <td>${row[`${yearB}_m1`]}</td>
+              <td>${row[`${yearA}_m2`]}</td>
+              <td>${row[`${yearB}_m2`]}</td>
+            </tr>
+          `).join('')}
+        </table>
+      </body>
+      </html>
+    `;
 
-    chartData.forEach(row => {
-      csvRows.push([
-        row.name,
-        row[`${yearA}_m1`],
-        row[`${yearB}_m1`],
-        row[`${yearA}_m2`],
-        row[`${yearB}_m2`]
-      ].join(','));
-    });
-
-    const csvString = csvRows.join('\n');
-    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob([tableHtml], { type: 'application/vnd.ms-excel' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `Reporte_Inteligencia_${yearB}_vs_${yearA}.csv`);
+    link.href = url;
+    link.download = `Resumen_Gerencial_${yearA}_${yearB}.xls`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
+  // 🖨️ EXPORTADOR PDF (Vía Ventana de Impresión)
+  const exportToPDF = () => {
+    window.print();
+  };
+
   if (!data || data.length === 0 || baseMetrics.length === 0) return null;
 
-  const tooltipStyle = { backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc', borderRadius: '8px' };
-  const tooltipItemStyle = { color: '#f8fafc', fontWeight: 'bold' };
+  const renderChart = (type, metricKey, colorA, colorB, gradientA, gradientB) => {
+    switch(type) {
+      case 'bar':
+        return (
+          <BarChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+            <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 10 }} />
+            <YAxis stroke="#64748b" tick={{ fontSize: 10 }} />
+            <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc' }} />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Bar name={`${metricKey} (${yearA})`} dataKey={`${yearA}_${metricKey === metricChart1 ? 'm1' : 'm2'}`} fill={colorA} radius={[4, 4, 0, 0]} />
+            <Bar name={`${metricKey} (${yearB})`} dataKey={`${yearB}_${metricKey === metricChart1 ? 'm1' : 'm2'}`} fill={colorB} radius={[4, 4, 0, 0]} />
+          </BarChart>
+        );
+      case 'line':
+        return (
+          <LineChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+            <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 10 }} />
+            <YAxis stroke="#64748b" tick={{ fontSize: 10 }} />
+            <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc' }} />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Line name={`${metricKey} (${yearA})`} type="monotone" dataKey={`${yearA}_${metricKey === metricChart1 ? 'm1' : 'm2'}`} stroke={colorA} strokeWidth={3} dot={{ r: 3 }} />
+            <Line name={`${metricKey} (${yearB})`} type="monotone" dataKey={`${yearB}_${metricKey === metricChart1 ? 'm1' : 'm2'}`} stroke={colorB} strokeWidth={3} dot={{ r: 3 }} />
+          </LineChart>
+        );
+      case 'area':
+      default:
+        return (
+          <AreaChart data={chartData}>
+            <defs>
+              <linearGradient id={gradientA} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={colorA} stopOpacity={0.4}/>
+                <stop offset="95%" stopColor={colorA} stopOpacity={0}/>
+              </linearGradient>
+              <linearGradient id={gradientB} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={colorB} stopOpacity={0.4}/>
+                <stop offset="95%" stopColor={colorB} stopOpacity={0}/>
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+            <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 10 }} />
+            <YAxis stroke="#64748b" tick={{ fontSize: 10 }} />
+            <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc' }} />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Area name={`${metricKey} (${yearA})`} type="monotone" dataKey={`${yearA}_${metricKey === metricChart1 ? 'm1' : 'm2'}`} stroke={colorA} fillOpacity={1} fill={`url(#${gradientA})`} strokeWidth={3} dot={false} />
+            <Area name={`${metricKey} (${yearB})`} type="monotone" dataKey={`${yearB}_${metricKey === metricChart1 ? 'm1' : 'm2'}`} stroke={colorB} fillOpacity={1} fill={`url(#${gradientB})`} strokeWidth={3} dot={false} />
+          </AreaChart>
+        );
+    }
+  };
 
   return (
-    <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl shadow-2xl my-6 space-y-6 relative">
+    <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl shadow-2xl my-6 space-y-6 print:bg-white print:text-black print:border-none print:shadow-none">
       
-      {/* CABECERA CON BOTÓN DE EXPORTACIÓN */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+      {/* CABECERA CON BOTONES DE EXPORTACIÓN */}
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 border-b border-slate-800 print:border-b-2 print:border-slate-300">
         <div>
-          <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-            <span className="text-blue-500">⚡</span> Tablero Analítico Multivariable Interanual
+          <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2 print:text-slate-800">
+            <span className="text-blue-500 print:text-slate-800">⚡</span> Tablero Analítico Multivariable Interanual
           </h3>
-          <p className="text-xs text-slate-400">Motor de cruce de datos con IA y Exportación</p>
+          <p className="text-xs text-slate-400 print:text-slate-600">Reporte Gerencial Consolidado</p>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 bg-slate-950 p-2 rounded-lg border border-slate-800 shadow-inner">
-            <label className="text-[10px] font-bold uppercase text-slate-400">Agrupar Eje X:</label>
+        <div className="flex flex-wrap items-center gap-3 print:hidden">
+          <div className="flex items-center gap-2 bg-slate-950 p-2 rounded-lg border border-slate-800">
+            <label className="text-[10px] font-bold uppercase text-slate-400">Eje X:</label>
             <select
               value={selectedDimension}
               onChange={(e) => setSelectedDimension(e.target.value)}
@@ -195,151 +265,77 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
             </select>
           </div>
           
-          {/* 📥 BOTÓN DE DESCARGA PROFESIONAL */}
-          <button 
-            onClick={exportToCSV}
-            className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-2 px-4 rounded-lg shadow-lg flex items-center gap-2 transition-all"
-          >
-            <span>📥</span> Descargar Excel
+          <button onClick={exportToExecutiveExcel} className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-2 px-3 rounded-lg shadow flex items-center gap-2 transition-all">
+            <span>📊</span> Excel Ejecutivo
+          </button>
+          
+          <button onClick={exportToPDF} className="bg-red-600 hover:bg-red-500 text-white text-xs font-bold py-2 px-3 rounded-lg shadow flex items-center gap-2 transition-all">
+            <span>📄</span> PDF / Imprimir
           </button>
         </div>
       </div>
 
-      {/* GRÁFICOS DUALES */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
-        {/* GRÁFICO 1: MÉTRICA A */}
-        <div className="bg-slate-950 p-4 rounded-xl border border-slate-800/80 shadow-md">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-800/60 mb-4">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-blue-400 font-bold uppercase">Métrica 1:</span>
-              <select
-                value={metricChart1}
-                onChange={(e) => setMetricChart1(e.target.value)}
-                className="bg-slate-900 border border-slate-700 text-slate-100 text-xs font-bold rounded px-2 py-1 outline-none cursor-pointer"
-              >
-                {baseMetrics.map((m, idx) => (
-                  <option key={idx} value={m}>{m}</option>
-                ))}
-              </select>
-            </div>
-            <button
-              onClick={() => setChart1Type(chart1Type === 'area' ? 'bar' : 'area')}
-              className="text-[10px] bg-slate-800 hover:bg-slate-700 border border-slate-600 px-3 py-1.5 rounded-md text-slate-200 font-bold transition-all"
-            >
-              {chart1Type === 'area' ? '🌊 Cambiar a Barras' : '📊 Cambiar a Áreas'}
-            </button>
-          </div>
-
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              {chart1Type === 'area' ? (
-                <AreaChart data={chartData}>
-                  <defs>
-                    <linearGradient id="colorM1A" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/>
-                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                    </linearGradient>
-                    <linearGradient id="colorM1B" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.4}/>
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                  <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 10 }} />
-                  <YAxis stroke="#64748b" tick={{ fontSize: 10 }} />
-                  <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Area name={`${metricChart1} (${yearA})`} type="monotone" dataKey={`${yearA}_m1`} stroke="#3b82f6" fillOpacity={1} fill="url(#colorM1A)" strokeWidth={3} dot={false} activeDot={{ r: 6, strokeWidth: 0 }} />
-                  <Area name={`${metricChart1} (${yearB})`} type="monotone" dataKey={`${yearB}_m1`} stroke="#10b981" fillOpacity={1} fill="url(#colorM1B)" strokeWidth={3} dot={false} activeDot={{ r: 6, strokeWidth: 0 }} />
-                </AreaChart>
-              ) : (
-                <BarChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                  <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 10 }} />
-                  <YAxis stroke="#64748b" tick={{ fontSize: 10 }} />
-                  <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar name={`${metricChart1} (${yearA})`} dataKey={`${yearA}_m1`} fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                  <Bar name={`${metricChart1} (${yearB})`} dataKey={`${yearB}_m1`} fill="#10b981" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              )}
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* GRÁFICO 2: MÉTRICA B (CRUZADA) */}
-        <div className="bg-slate-950 p-4 rounded-xl border border-slate-800/80 shadow-md">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-800/60 mb-4">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-amber-400 font-bold uppercase">Métrica 2 (Cruce):</span>
-              <select
-                value={metricChart2}
-                onChange={(e) => setMetricChart2(e.target.value)}
-                className="bg-slate-900 border border-slate-700 text-slate-100 text-xs font-bold rounded px-2 py-1 outline-none cursor-pointer"
-              >
-                {baseMetrics.map((m, idx) => (
-                  <option key={idx} value={m}>{m}</option>
-                ))}
-              </select>
-            </div>
-            <button
-              onClick={() => setChart2Type(chart2Type === 'area' ? 'bar' : 'area')}
-              className="text-[10px] bg-slate-800 hover:bg-slate-700 border border-slate-600 px-3 py-1.5 rounded-md text-slate-200 font-bold transition-all"
-            >
-              {chart2Type === 'area' ? '🌊 Cambiar a Barras' : '📊 Cambiar a Áreas'}
-            </button>
-          </div>
-
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              {chart2Type === 'bar' ? (
-                <BarChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                  <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 10 }} />
-                  <YAxis stroke="#64748b" tick={{ fontSize: 10 }} />
-                  <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar name={`${metricChart2} (${yearA})`} dataKey={`${yearA}_m2`} fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                  <Bar name={`${metricChart2} (${yearB})`} dataKey={`${yearB}_m2`} fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              ) : (
-                <AreaChart data={chartData}>
-                  <defs>
-                    <linearGradient id="colorM2A" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.4}/>
-                      <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
-                    </linearGradient>
-                    <linearGradient id="colorM2B" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.4}/>
-                      <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                  <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 10 }} />
-                  <YAxis stroke="#64748b" tick={{ fontSize: 10 }} />
-                  <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Area name={`${metricChart2} (${yearA})`} type="monotone" dataKey={`${yearA}_m2`} stroke="#f59e0b" fillOpacity={1} fill="url(#colorM2A)" strokeWidth={3} dot={false} activeDot={{ r: 6, strokeWidth: 0 }} />
-                  <Area name={`${metricChart2} (${yearB})`} type="monotone" dataKey={`${yearB}_m2`} stroke="#8b5cf6" fillOpacity={1} fill="url(#colorM2B)" strokeWidth={3} dot={false} activeDot={{ r: 6, strokeWidth: 0 }} />
-                </AreaChart>
-              )}
-            </ResponsiveContainer>
-          </div>
-        </div>
-      </div>
-
-      {/* 🧠 PANEL DE INTELIGENCIA DE NEGOCIO (IA HEURÍSTICA) */}
-      <div className="mt-6 bg-indigo-950/30 border border-indigo-500/50 rounded-xl p-5 shadow-[0_0_15px_rgba(99,102,241,0.15)]">
-        <h4 className="text-sm font-extrabold text-indigo-300 flex items-center gap-2 mb-4">
+      {/* 🧠 PANEL DE INTELIGENCIA DE NEGOCIO (IMPRIMIBLE) */}
+      <div className="mt-2 bg-indigo-950/30 border border-indigo-500/50 rounded-xl p-5 print:bg-slate-100 print:border-slate-300">
+        <h4 className="text-sm font-extrabold text-indigo-300 flex items-center gap-2 mb-3 print:text-slate-800">
           <span>🧠</span> Observaciones Automatizadas para Toma de Decisiones
         </h4>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {aiInsights.map((insight, index) => (
-            <div key={index} className="bg-slate-900/80 border border-indigo-500/20 p-4 rounded-lg text-xs text-slate-300 leading-relaxed shadow-inner">
+        <ul className="space-y-2">
+          {rawInsights.map((insight, index) => (
+            <li key={index} className="text-xs text-slate-300 leading-relaxed print:text-slate-700 list-disc ml-5">
               {insight}
-            </div>
+            </li>
           ))}
+        </ul>
+      </div>
+
+      {/* GRÁFICOS DUALES */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 print:grid-cols-2">
+        
+        {/* GRÁFICO 1 */}
+        <div className="bg-slate-950 p-4 rounded-xl border border-slate-800/80 print:bg-white print:border-slate-300">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-800/60 mb-4 print:hidden">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-blue-400 font-bold uppercase">Métrica 1:</span>
+              <select value={metricChart1} onChange={(e) => setMetricChart1(e.target.value)} className="bg-slate-900 border border-slate-700 text-slate-100 text-xs font-bold rounded px-2 py-1 outline-none">
+                {baseMetrics.map((m, idx) => <option key={idx} value={m}>{m}</option>)}
+              </select>
+            </div>
+            <select value={chart1Type} onChange={(e) => setChart1Type(e.target.value)} className="text-[10px] bg-slate-800 border border-slate-600 px-2 py-1 rounded-md text-slate-200 font-bold outline-none">
+              <option value="area">🌊 Áreas</option>
+              <option value="bar">📊 Barras</option>
+              <option value="line">📈 Líneas</option>
+            </select>
+          </div>
+          <h4 className="hidden print:block text-center text-xs font-bold mb-4 text-slate-800 uppercase">{metricChart1}</h4>
+          <div className="h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              {renderChart(chart1Type, metricChart1, '#3b82f6', '#10b981', 'colorM1A', 'colorM1B')}
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* GRÁFICO 2 */}
+        <div className="bg-slate-950 p-4 rounded-xl border border-slate-800/80 print:bg-white print:border-slate-300">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-800/60 mb-4 print:hidden">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-amber-400 font-bold uppercase">Métrica 2:</span>
+              <select value={metricChart2} onChange={(e) => setMetricChart2(e.target.value)} className="bg-slate-900 border border-slate-700 text-slate-100 text-xs font-bold rounded px-2 py-1 outline-none">
+                {baseMetrics.map((m, idx) => <option key={idx} value={m}>{m}</option>)}
+              </select>
+            </div>
+            <select value={chart2Type} onChange={(e) => setChart2Type(e.target.value)} className="text-[10px] bg-slate-800 border border-slate-600 px-2 py-1 rounded-md text-slate-200 font-bold outline-none">
+              <option value="bar">📊 Barras</option>
+              <option value="area">🌊 Áreas</option>
+              <option value="line">📈 Líneas</option>
+            </select>
+          </div>
+          <h4 className="hidden print:block text-center text-xs font-bold mb-4 text-slate-800 uppercase">{metricChart2}</h4>
+          <div className="h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              {renderChart(chart2Type, metricChart2, '#f59e0b', '#8b5cf6', 'colorM2A', 'colorM2B')}
+            </ResponsiveContainer>
+          </div>
         </div>
       </div>
     </div>
