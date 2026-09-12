@@ -31,7 +31,6 @@ export default function Home() {
         body: formData,
       });
 
-      // NUEVO: Extraemos el error real del servidor para no ocultarlo
       if (!response.ok) {
         const errData = await response.json();
         throw new Error(errData.detail || "El servidor rechazó el archivo");
@@ -124,63 +123,60 @@ export default function Home() {
         const val = parseFloat(row[col]);
         if (!isNaN(val)) { sum += val; count++; }
       });
-      if (count > 0) { colStats[col] = { avg: sum / count }; }
+      if (count > 0) { colStats[col] = { avg: sum / count, sum: sum }; }
     });
   }
 
-  // ========================================================
-  // KPI ADAPTATIVOS (SI NO HAY BANANO, BUSCA OTROS NÚMEROS)
-  // ========================================================
-  const getKPIs = () => {
+  // MOTOR DINÁMICO DE KPIS (SE ADAPTA A CUALQUIER ARCHIVO)
+  const getDynamicKPIs = () => {
     if (!matrixData || filteredRows.length === 0) return null;
     const cols = matrixData.columnas;
-    
-    // Intenta buscar configuración de banano primero
-    let colSumaTarget = cols.find(c => c.toUpperCase().includes('EMBOLSE AÑOS') && c.includes(yearB)) 
-                    || cols.find(c => c.toUpperCase().includes('EMBOLSE'));
-    
-    let colPromedioTarget = cols.find(c => c.toUpperCase().includes('POR HECTAREA') && c.includes(yearB)) 
-                    || cols.find(c => c.toUpperCase().includes('HECTAREA'));
 
-    let isUniversalMode = false;
+    // Detectar todas las columnas que contienen números
+    const numericCols = cols.filter(col => colStats[col] !== undefined);
 
-    // Si NO encontró las columnas de banano, entra en Modo Universal (cualquier finca/empresa)
-    if (!colSumaTarget) {
-      isUniversalMode = true;
-      // Busca la primera columna numérica que encuentre
-      colSumaTarget = cols.find(col => {
-        const val = parseFloat(filteredRows[0][col]);
-        return !isNaN(val);
-      });
-      // Busca la segunda columna numérica para el promedio (si existe)
-      colPromedioTarget = cols.reverse().find(col => {
-        const val = parseFloat(filteredRows[0][col]);
-        return !isNaN(val) && col !== colSumaTarget;
-      });
+    // 1. Caso Agronómico (Banano)
+    const colEmbolse = cols.find(c => c.toUpperCase().includes('EMBOLSE'));
+    const colHa = cols.find(c => c.toUpperCase().includes('HECTAREA'));
+
+    if (colEmbolse || colHa) {
+      const targetEmbolse = cols.find(c => c.toUpperCase().includes('EMBOLSE AÑOS') && c.includes(yearB)) || colEmbolse;
+      const targetHa = cols.find(c => c.toUpperCase().includes('POR HECTAREA') && c.includes(yearB)) || colHa;
+
+      return [
+        { title: 'Total Registros', value: matrixData.total_filas || filteredRows.length, icon: '🗓️', color: 'blue' },
+        { title: `Total Embolse (${targetEmbolse ? targetEmbolse.split('|').pop().trim() : 'General'})`, value: colStats[targetEmbolse]?.sum || 0, icon: '📦', color: 'emerald' },
+        { title: `Promedio Embolse/Ha`, value: colStats[targetHa]?.avg || 0, icon: '🌱', color: 'purple', note: '*Métrica Agronómica' }
+      ];
     }
 
-    let totalSuma = 0;
-    if (colSumaTarget) {
-      filteredRows.forEach(row => {
-        const val = parseFloat(row[colSumaTarget]);
-        if (!isNaN(val)) totalSuma += val;
-      });
-    }
+    // 2. Caso Universal (Cualquier Excel / Empresa)
+    const primaryCol = numericCols[0] || null;
+    const secondaryCol = numericCols[1] || null;
 
-    return {
-      totalSemanas: filteredRows.length,
-      totalEmbolse: totalSuma,
-      avgEmbolseHa: colPromedioTarget && colStats[colPromedioTarget] ? colStats[colPromedioTarget].avg : 0,
-      labelEmbolse: colSumaTarget ? colSumaTarget.split('|').pop().trim() : 'Suma Total',
-      labelEmbolseHa: colPromedioTarget ? colPromedioTarget.split('|').pop().trim() : 'Promedio',
-      isUniversalMode: isUniversalMode
-    };
+    return [
+      { 
+        title: 'Registros Procesados', 
+        value: matrixData.total_filas || filteredRows.length, 
+        icon: '📊', 
+        color: 'blue' 
+      },
+      { 
+        title: primaryCol ? `Suma Total: ${primaryCol.split('|').pop().trim()}` : 'Metrica Principal', 
+        value: primaryCol ? colStats[primaryCol].sum : 0, 
+        icon: '💰', 
+        color: 'emerald' 
+      },
+      { 
+        title: secondaryCol ? `Promedio: ${secondaryCol.split('|').pop().trim()}` : 'Promedio General', 
+        value: secondaryCol ? colStats[secondaryCol].avg : 0, 
+        icon: '📈', 
+        color: 'purple' 
+      }
+    ];
   };
 
   const getCellColor = (val, colName) => {
-    if (colName.toUpperCase().includes('SEMANA') || colName.toUpperCase().includes('CINTA')) return 'text-slate-300';
-    if (colName.toUpperCase().includes('ACUMULADO')) return 'text-slate-300 font-mono';
-
     const num = parseFloat(val);
     if (isNaN(num) || !colStats[colName]) return 'text-slate-300';
     
@@ -194,7 +190,7 @@ export default function Home() {
     return 'text-slate-300';
   };
 
-  const kpis = getKPIs();
+  const kpis = getDynamicKPIs();
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
@@ -203,7 +199,7 @@ export default function Home() {
           <div className="bg-blue-600 text-white font-bold p-2 rounded-lg text-xs tracking-wider">OL</div>
           <div>
             <h1 className="text-base font-bold text-white tracking-tight">OmniLogistics OS</h1>
-            <p className="text-xs text-slate-400">SaaS Analítico Adaptable</p>
+            <p className="text-xs text-slate-400">Plataforma Universal de Análisis B2B</p>
           </div>
         </div>
         <div className="flex items-center space-x-2">
@@ -236,7 +232,6 @@ export default function Home() {
                 <button 
                   onClick={handleClear}
                   className="bg-slate-800 hover:bg-rose-900/80 text-slate-300 hover:text-rose-200 border border-slate-700 hover:border-rose-700 text-xs font-medium px-3 py-2 rounded-lg transition-colors shadow-md"
-                  title="Desmontar archivo actual"
                 >
                   ✕ Limpiar
                 </button>
@@ -273,36 +268,18 @@ export default function Home() {
           <div className="space-y-4">
             {kpis && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 flex items-center space-x-4 shadow-sm">
-                  <div className="p-3 bg-blue-900/30 text-blue-400 rounded-lg border border-blue-900/50 text-xl">🗓️</div>
-                  <div>
-                    <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mb-1">Total Registros</p>
-                    <h4 className="text-2xl font-bold text-slate-100 font-mono">{kpis.totalSemanas}</h4>
+                {kpis.map((kpi, idx) => (
+                  <div key={idx} className="bg-slate-900 p-5 rounded-xl border border-slate-800 flex items-center space-x-4 shadow-sm">
+                    <div className={`p-3 bg-${kpi.color}-900/30 text-${kpi.color}-400 rounded-lg border border-${kpi.color}-900/50 text-xl`}>
+                      {kpi.icon}
+                    </div>
+                    <div>
+                      <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mb-1">{kpi.title}</p>
+                      <h4 className="text-2xl font-bold text-slate-100 font-mono">{formatValue(kpi.value)}</h4>
+                      {kpi.note && <p className="text-[9px] text-slate-500 mt-1 font-mono">{kpi.note}</p>}
+                    </div>
                   </div>
-                </div>
-
-                <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 flex items-center space-x-4 shadow-sm">
-                  <div className="p-3 bg-emerald-900/30 text-emerald-400 rounded-lg border border-emerald-900/50 text-xl">📦</div>
-                  <div>
-                    <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mb-1">
-                      {kpis.isUniversalMode ? `Suma: ${kpis.labelEmbolse}` : `Total Embolse (${kpis.labelEmbolse})`}
-                    </p>
-                    <h4 className="text-2xl font-bold text-slate-100 font-mono">{formatValue(kpis.totalEmbolse)}</h4>
-                  </div>
-                </div>
-
-                <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 flex items-center space-x-4 shadow-sm">
-                  <div className="p-3 bg-purple-900/30 text-purple-400 rounded-lg border border-purple-900/50 text-xl">🌱</div>
-                  <div>
-                    <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mb-1">
-                      {kpis.isUniversalMode ? `Promedio: ${kpis.labelEmbolseHa}` : `Ritmo Embolse/Ha (${kpis.labelEmbolseHa})`}
-                    </p>
-                    <h4 className="text-2xl font-bold text-slate-100 font-mono">{formatValue(kpis.avgEmbolseHa)}</h4>
-                    {!kpis.isUniversalMode && (
-                      <p className="text-[9px] text-slate-500 mt-1 font-mono tracking-tight">*Densidad referencial</p>
-                    )}
-                  </div>
-                </div>
+                ))}
               </div>
             )}
 
@@ -314,15 +291,13 @@ export default function Home() {
                     {matrixData.archivo}
                   </h3>
                   <span className="bg-emerald-900/40 text-emerald-400 text-xs font-semibold px-3 py-1 rounded-full border border-emerald-800 hidden md:inline-block">
-                    Semáforo Activo 🚥
+                    Modo Adaptativo 🚥
                   </span>
                 </div>
                 
                 <div className="flex items-center space-x-3 w-full sm:w-auto">
                   <div className="relative w-full sm:w-64">
-                    <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-500">
-                      🔍
-                    </span>
+                    <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-500">🔍</span>
                     <input
                       type="text"
                       placeholder="Filtrar datos..."
@@ -396,7 +371,7 @@ export default function Home() {
           <div className="bg-slate-900 border border-slate-800 rounded-xl min-h-[400px] flex flex-col items-center justify-center py-20 text-center shadow-lg">
             <div className="w-12 h-12 bg-slate-800 rounded-full flex items-center justify-center mb-3 text-slate-400 text-xl">🚀</div>
             <h3 className="text-slate-200 font-semibold text-base mb-1">Esperando Datos</h3>
-            <p className="text-slate-400 text-sm max-w-md">Sube cualquier Excel para que el motor Universal procese y despliegue la matriz.</p>
+            <p className="text-slate-400 text-sm max-w-md">Sube cualquier archivo Excel o CSV para generar tableros y KPIs adaptativos en tiempo real.</p>
           </div>
         )}
       </main>
