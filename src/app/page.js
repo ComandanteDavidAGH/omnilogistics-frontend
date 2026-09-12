@@ -1,4 +1,5 @@
 'use client';
+import DynamicCharts from './components/DynamicCharts';
 import { useState, useRef } from 'react';
 
 export default function Home() {
@@ -282,7 +283,7 @@ export default function Home() {
                 ))}
               </div>
             )}
-
+<DynamicCharts columns={matrixData.columnas} data={filteredRows} />
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-1 shadow-lg">
               <div className="flex flex-col sm:flex-row justify-between items-center bg-slate-950 p-4 rounded-t-lg border-b border-slate-800 gap-4">
                 <div className="flex items-center gap-3">
