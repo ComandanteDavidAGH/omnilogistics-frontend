@@ -7,19 +7,24 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
 
   const getBaseName = (rawCol) => {
     if (!rawCol) return '';
+    // Guardar los espacios invisibles del final para mantener la unicidad de las llaves
+    const trailingSpaces = rawCol.match(/\s+$/)?.[0] || ''; 
     const lower = rawCol.toLowerCase();
     
-    if (lower.includes('semana')) return 'Semana';
-    if (lower.includes('cinta')) return 'Cinta';
-    if (lower.includes('resiembra')) return 'Resiembras';
-    if (lower.includes('lluvia')) return 'Lluvias';
-    if (lower.includes('manos')) return 'Manos';
-    if (lower.includes('embolse')) return 'Embolse';
-    if (lower.includes('hectárea') || lower.includes('hectarea')) return 'Hectáreas';
+    if (lower.includes('semana')) return 'Semana' + trailingSpaces;
+    if (lower.includes('cinta')) return 'Cinta' + trailingSpaces;
+    if (lower.includes('resiembra')) return 'Resiembras' + trailingSpaces;
+    if (lower.includes('lluvia')) return 'Lluvias' + trailingSpaces;
+    if (lower.includes('manos')) return 'Manos' + trailingSpaces;
+    if (lower.includes('embolse')) return 'Embolse' + trailingSpaces;
+    if (lower.includes('hectárea') || lower.includes('hectarea')) return 'Hectáreas' + trailingSpaces;
 
     let clean = rawCol.split('|').map(p => p.trim()).filter(p => !/^\d{4}$/.test(p)).join(' ');
-    clean = clean.replace(/columna_\d+/gi, '').replace(/\b20\d{2}\b/g, '').replace(/-/g, ' ').replace(/\s+/g, ' ').trim();
-    return clean || rawCol.trim();
+    // Limpieza de números y fechas, pero conservamos los espacios invisibles
+    clean = clean.replace(/columna_\d+/gi, '').replace(/\b20\d{2}\b/g, '').replace(/-/g, ' ').trim();
+    
+    // Devolvemos el título limpio con sus espacios invisibles al final
+    return (clean || rawCol.trim()) + trailingSpaces;
   };
 
   const dimensionCols = useMemo(() => {
