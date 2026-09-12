@@ -5,26 +5,31 @@ import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tool
 export default function DynamicCharts({ columns, data, yearA, yearB }) {
   const [isOpenMetrics, setIsOpenMetrics] = useState(false);
 
+  // 1. Limpiador Semántico (AHORA DESTRUYE LOS " 1", ".1", "_1" DE PANDAS)
   const getBaseName = (rawCol) => {
     if (!rawCol) return '';
-    // Guardar los espacios invisibles del final para mantener la unicidad de las llaves
-    const trailingSpaces = rawCol.match(/\s+$/)?.[0] || ''; 
     const lower = rawCol.toLowerCase();
     
-    if (lower.includes('semana')) return 'Semana' + trailingSpaces;
-    if (lower.includes('cinta')) return 'Cinta' + trailingSpaces;
-    if (lower.includes('resiembra')) return 'Resiembras' + trailingSpaces;
-    if (lower.includes('lluvia')) return 'Lluvias' + trailingSpaces;
-    if (lower.includes('manos')) return 'Manos' + trailingSpaces;
-    if (lower.includes('embolse')) return 'Embolse' + trailingSpaces;
-    if (lower.includes('hectárea') || lower.includes('hectarea')) return 'Hectáreas' + trailingSpaces;
+    if (lower.includes('semana')) return 'Semana';
+    if (lower.includes('cinta')) return 'Cinta';
+    if (lower.includes('resiembra')) return 'Resiembras';
+    if (lower.includes('lluvia')) return 'Lluvias';
+    if (lower.includes('manos')) return 'Manos';
+    if (lower.includes('embolse')) return 'Embolse';
+    if (lower.includes('hectárea') || lower.includes('hectarea')) return 'Hectáreas';
 
     let clean = rawCol.split('|').map(p => p.trim()).filter(p => !/^\d{4}$/.test(p)).join(' ');
-    // Limpieza de números y fechas, pero conservamos los espacios invisibles
-    clean = clean.replace(/columna_\d+/gi, '').replace(/\b20\d{2}\b/g, '').replace(/-/g, ' ').trim();
     
-    // Devolvemos el título limpio con sus espacios invisibles al final
-    return (clean || rawCol.trim()) + trailingSpaces;
+    // Destruimos años, guiones, y los malditos sufijos de duplicados (ej: " 1", ".1")
+    clean = clean
+      .replace(/columna_\d+/gi, '')
+      .replace(/\b20\d{2}\b/g, '')
+      .replace(/-/g, ' ')
+      .replace(/[\.\s_][1-9]$/g, '') // 🔥 ESTA ES LA MAGIA QUE ELIMINA EL " 1" 🔥
+      .replace(/\s+/g, ' ')
+      .trim();
+      
+    return clean || rawCol.trim();
   };
 
   const dimensionCols = useMemo(() => {
@@ -49,17 +54,30 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
   const [selectedDimension, setSelectedDimension] = useState(dimensionCols[0] || columns?.[0] || '');
   const [selectedMetric, setSelectedMetric] = useState(baseMetrics[0] || '');
 
+  // 2. CONEXIÓN INTELIGENTE DE AÑOS (Incluso si no dicen "2024" o "2025")
   const { colYearA, colYearB } = useMemo(() => {
-    let colA = null, colB = null;
     if (!selectedMetric || !columns) return { colYearA: null, colYearB: null };
 
-    columns.forEach(col => {
-      if (getBaseName(col) === selectedMetric) {
-        if (col.includes(yearA)) colA = col;
-        if (col.includes(yearB)) colB = col;
-        if (!col.includes(yearA) && !col.includes(yearB) && !colA) colA = col;
-      }
+    // Buscamos todas las columnas originales que pertenecen a esta métrica
+    const matchingCols = columns.filter(col => getBaseName(col) === selectedMetric);
+    
+    let colA = null, colB = null;
+    let foundByYear = false;
+
+    // Intento 1: Buscar si la columna explícitamente dice "2024" o "2025"
+    matchingCols.forEach(col => {
+      if (col.includes(yearA)) { colA = col; foundByYear = true; }
+      if (col.includes(yearB)) { colB = col; foundByYear = true; }
     });
+
+    // 🔥 Intento 2: MAGIA. Si las columnas son idénticas (Pandas puso un " 1"), las asignamos por orden de aparición
+    if (!foundByYear && matchingCols.length > 0) {
+      colA = matchingCols[0]; // La primera que aparezca en el Excel va al Año A (Ej: 2024)
+      if (matchingCols.length > 1) {
+        colB = matchingCols[1]; // La segunda que aparezca va al Año B (Ej: 2025)
+      }
+    }
+
     return { colYearA: colA, colYearB: colB };
   }, [columns, selectedMetric, yearA, yearB]);
 
@@ -151,7 +169,6 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
               onClick={() => setIsOpenMetrics(!isOpenMetrics)}
               className="bg-slate-950 border border-slate-700 text-emerald-400 font-bold text-xs rounded-lg px-4 py-2 flex items-center justify-between gap-2 min-w-[200px] shadow-inner"
             >
-              {/* truncate evita que un texto gigante rompa la caja */}
               <span className="truncate max-w-[180px] text-left">{selectedMetric}</span>
               <span className="text-[10px] text-slate-400">{isOpenMetrics ? '▲' : '▼'}</span>
             </button>
@@ -211,7 +228,7 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
           </div>
         </div>
 
-        {/* GRÁFICO 2: TENDENCIA EN LÍNEAS TEMPORALES (Tu petición) */}
+        {/* GRÁFICO 2: TENDENCIA EN LÍNEAS TEMPORALES */}
         {showSecondChart && (
           <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
             <div className="mb-3 text-center">
@@ -232,7 +249,6 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
 
                   {isInterannualMode ? (
                     <>
-                      {/* Las dos famosas líneas */}
                       <Line type="monotone" dataKey={yearA} stroke="#3b82f6" strokeWidth={3} dot={{ r: 3, fill: '#3b82f6', stroke: '#1e293b', strokeWidth: 2 }} activeDot={{ r: 6 }} />
                       <Line type="monotone" dataKey={yearB} stroke="#10b981" strokeWidth={3} dot={{ r: 3, fill: '#10b981', stroke: '#1e293b', strokeWidth: 2 }} activeDot={{ r: 6 }} />
                     </>
