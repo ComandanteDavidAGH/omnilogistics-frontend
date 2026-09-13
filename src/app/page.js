@@ -1,382 +1,171 @@
 'use client';
-import { useState, useRef } from 'react';
-import DynamicCharts from './components/DynamicCharts'; // AQUÍ IMPORTAMOS EL MOTOR DE GRÁFICOS
+import { useState } from 'react';
+import * as XLSX from 'xlsx';
+import DynamicCharts from './components/DynamicCharts';
 
-export default function Home() {
-  const [yearA, setYearA] = useState('2024');
-  const [yearB, setYearB] = useState('2025');
-  
-  const [file, setFile] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [matrixData, setMatrixData] = useState(null);
-  const [freezePanes, setFreezePanes] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
+export default function Dashboard() {
+  const [fileData, setFileData] = useState(null);
+  const [fileName, setFileName] = useState('');
+  const [workbook, setWorkbook] = useState(null);
+  const [sheetNames, setSheetNames] = useState([]);
 
-  const fileInputRef = useRef(null);
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setFileName(file.name);
 
-  const handleFileUpload = async () => {
-    if (!file) {
-      alert("Selecciona un archivo Excel primero.");
-      return;
-    }
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const bstr = evt.target.result;
+      const wb = XLSX.read(bstr, { type: 'binary' });
+      setWorkbook(wb);
+      setSheetNames(wb.SheetNames);
 
-    setIsLoading(true);
-    const formData = new FormData();
-    formData.append("file", file);
-
-    try {
-      const BACKEND_URL = "https://omnilogistics-backend-6bbn.onrender.com/api/procesar-matriz"; 
-      
-      const response = await fetch(BACKEND_URL, {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.detail || "El servidor rechazó el archivo");
+      // Si solo hay una hoja, procesarla directamente
+      if (wb.SheetNames.length === 1) {
+        processSheet(wb, wb.SheetNames[0]);
+      } else {
+        // Limpiar datos previos si hay múltiples hojas para que el bot pregunte
+        setFileData(null);
       }
-
-      const data = await response.json();
-      setMatrixData(data);
-    } catch (error) {
-      console.error("Error al procesar:", error);
-      alert("❌ Fallo en el Servidor:\n" + error.message);
-    } finally {
-      setIsLoading(false);
-    }
+    };
+    reader.readAsBinaryString(file);
   };
 
-  const handleClear = () => {
-    setFile(null);
-    setMatrixData(null);
-    setSearchTerm('');
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''; 
-    }
-  };
-
-  const exportToCSV = () => {
-    if (!matrixData || filteredRows.length === 0) return;
-    const cols = matrixData.columnas;
-    const header = cols.join(',');
-    const csvRows = filteredRows.map(row => {
-      return cols.map(col => {
-        let cellData = row[col] !== undefined && row[col] !== null ? String(row[col]) : '';
-        cellData = cellData.replace(/"/g, '""');
-        return `"${cellData}"`;
-      }).join(',');
-    });
+  const processSheet = (wb, sheetName) => {
+    const ws = wb.Sheets[sheetName];
+    // Convertir a matriz de matrices (Array of Arrays)
+    const aoa = XLSX.utils.sheet_to_json(ws, { header: 1 });
     
-    const csvContent = [header, ...csvRows].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `OmniLogistics_Reporte_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const formatValue = (val) => {
-    if (val === null || val === undefined || val === '' || val === '-') return '-';
-    if (typeof val === 'number') {
-      return Number.isInteger(val) ? val.toLocaleString('en-US') : val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
-    if (typeof val === 'string' && !isNaN(val) && val.trim() !== '') {
-      const num = parseFloat(val);
-      return Number.isInteger(num) ? num.toLocaleString('en-US') : num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
-    return val;
-  };
-
-  const renderHeaderTitle = (title) => {
-    if (!title) return '';
-    const parts = title.split('|').map(p => p.trim());
-    if (parts.length > 1) {
-      return (
-        <div className="flex flex-col items-center justify-center text-center leading-tight py-1 min-w-[120px]">
-          <span className="text-[9px] uppercase tracking-wider text-slate-400 font-normal">{parts[0]}</span>
-          <span className="text-[10px] uppercase font-semibold text-slate-200 mt-0.5">{parts[1]}</span>
-          {parts[2] && <span className="text-[11px] font-bold text-blue-400 mt-0.5">{parts[2]}</span>}
-        </div>
-      );
-    }
-    return <span className="text-[11px] font-semibold text-slate-200">{title}</span>;
-  };
-
-  const rowList = matrixData ? (matrixData.filas || matrixData.datos || matrixData.matriz || matrixData.data || []) : [];
-
-  const filteredRows = rowList.filter(row => {
-    if (!searchTerm) return true;
-    const term = searchTerm.toLowerCase();
-    return matrixData.columnas.some(col => 
-      String(row[col] || '').toLowerCase().includes(term)
-    );
-  });
-
-  const colStats = {};
-  if (matrixData && filteredRows.length > 0) {
-    matrixData.columnas.forEach(col => {
-      let sum = 0, count = 0;
-      filteredRows.forEach(row => {
-        const val = parseFloat(row[col]);
-        if (!isNaN(val)) { sum += val; count++; }
-      });
-      if (count > 0) { colStats[col] = { avg: sum / count, sum: sum }; }
-    });
-  }
-
-  // MOTOR DINÁMICO DE KPIS
-  const getDynamicKPIs = () => {
-    if (!matrixData || filteredRows.length === 0) return null;
-    const cols = matrixData.columnas;
-
-    const numericCols = cols.filter(col => colStats[col] !== undefined);
-
-    const colEmbolse = cols.find(c => c.toUpperCase().includes('EMBOLSE'));
-    const colHa = cols.find(c => c.toUpperCase().includes('HECTAREA') || c.toUpperCase().includes('HECTÁREA'));
-
-    if (colEmbolse || colHa) {
-      const targetEmbolse = cols.find(c => c.toUpperCase().includes('EMBOLSE AÑOS') && c.includes(yearB)) || colEmbolse;
-      const targetHa = cols.find(c => (c.toUpperCase().includes('POR HECTAREA') || c.toUpperCase().includes('POR HECTÁREA')) && c.includes(yearB)) || colHa;
-
-      return [
-        { title: 'Total Registros', value: matrixData.total_filas || filteredRows.length, icon: '🗓️', color: 'blue' },
-        { title: `Total Embolse (${yearB})`, value: colStats[targetEmbolse]?.sum || 0, icon: '📦', color: 'emerald' },
-        { title: `Promedio Embolse/Ha`, value: colStats[targetHa]?.avg || 0, icon: '🌱', color: 'purple', note: '*Métrica Agronómica' }
-      ];
-    }
-
-    const primaryCol = numericCols[0] || null;
-    const secondaryCol = numericCols[1] || null;
-
-    return [
-      { 
-        title: 'Registros Procesados', 
-        value: matrixData.total_filas || filteredRows.length, 
-        icon: '📊', 
-        color: 'blue' 
-      },
-      { 
-        title: primaryCol ? `Suma Total: ${primaryCol.split('|').pop().trim()}` : 'Metrica Principal', 
-        value: primaryCol ? colStats[primaryCol].sum : 0, 
-        icon: '💰', 
-        color: 'emerald' 
-      },
-      { 
-        title: secondaryCol ? `Promedio: ${secondaryCol.split('|').pop().trim()}` : 'Promedio General', 
-        value: secondaryCol ? colStats[secondaryCol].avg : 0, 
-        icon: '📈', 
-        color: 'purple' 
-      }
-    ];
-  };
-
-  const getCellColor = (val, colName) => {
-    const num = parseFloat(val);
-    if (isNaN(num) || !colStats[colName]) return 'text-slate-300';
+    // --- OMNIPARSER: EL CEREBRO DE VISIÓN ESPACIAL ---
     
-    const avg = colStats[colName].avg;
-    if (avg === 0) return 'text-slate-300';
-    
-    const ratio = num / avg;
-    if (ratio > 1.15) return 'text-emerald-400 font-bold bg-emerald-950/30'; 
-    if (ratio < 0.85) return 'text-rose-400 font-bold bg-rose-950/30';       
-    
-    return 'text-slate-300';
-  };
+    // 1. Limpiar filas completamente vacías
+    const cleanAoA = aoa.filter(row => row.some(cell => cell !== null && cell !== undefined && String(cell).trim() !== ''));
+    if (cleanAoA.length < 2) {
+        setFileData([]);
+        return;
+    }
 
-  const kpis = getDynamicKPIs();
+    // 2. RASTREO TÉRMICO: Buscar la verdadera fila de Títulos (Ignorar títulos flotantes)
+    let headerRowIndex = 0;
+    for (let i = 0; i < Math.min(10, cleanAoA.length); i++) {
+        let colsWithData = cleanAoA[i].filter(c => c !== undefined && String(c).trim() !== '').length;
+        if (colsWithData > 1) {
+            headerRowIndex = i;
+            // Si la fila de abajo tiene números, esta es definitivamente la cabecera
+            if (cleanAoA[i+1] && cleanAoA[i+1].some(c => !isNaN(parseFloat(c)))) {
+                break;
+            }
+        }
+    }
+
+    const colHeaders = cleanAoA[headerRowIndex];
+    const dataRows = cleanAoA.slice(headerRowIndex + 1);
+
+    // 3. DETECCIÓN DE GRAVEDAD: ¿Es una Matriz (Textos en Y y X, números al centro)?
+    let numCount = 0;
+    let cellCount = 0;
+    for(let i = 0; i < Math.min(5, dataRows.length); i++) {
+        for(let j = 1; j < dataRows[i].length; j++) {
+            if (dataRows[i][j] !== undefined && String(dataRows[i][j]).trim() !== '') {
+                cellCount++;
+                if (!isNaN(parseFloat(dataRows[i][j]))) numCount++;
+            }
+        }
+    }
+
+    // Si más del 60% de la zona de datos son números, la IA deduce que es una Matriz
+    const isMatrix = cellCount > 0 && (numCount / cellCount) > 0.6; 
+
+    let finalData = [];
+    
+    if (isMatrix) {
+        // 4A. APLANAMIENTO UNIVERSAL (Metamorfosis T-1000)
+        for (let i = 0; i < dataRows.length; i++) {
+            const rowHeader = dataRows[i][0] || `Fila_${i}`; // El texto de la izquierda (Ej. EMBOLSE)
+            for (let j = 1; j < dataRows[i].length; j++) {
+                const val = dataRows[i][j];
+                if (val !== undefined && val !== null && String(val).trim() !== '') {
+                    finalData.push({
+                        "Categoria_Y": String(rowHeader).trim(),
+                        "Atributo_X": String(colHeaders[j] || `Col_${j}`).trim(),
+                        "Valor_Numerico": isNaN(parseFloat(val)) ? val : parseFloat(val)
+                    });
+                }
+            }
+        }
+    } else {
+        // 4B. TABLA PLANA ESTÁNDAR
+        const headers = colHeaders.map((h, i) => h || `Columna_${i}`);
+        for (let i = 0; i < dataRows.length; i++) {
+            let rowObj = {};
+            headers.forEach((h, j) => {
+                rowObj[h] = dataRows[i][j];
+            });
+            finalData.push(rowObj);
+        }
+    }
+    
+    setFileData(finalData);
+  };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
-      <header className="border-b border-slate-800 bg-slate-900 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <div className="bg-blue-600 text-white font-bold p-2 rounded-lg text-xs tracking-wider">OL</div>
+    <div className="min-h-screen bg-slate-950 p-6 font-sans">
+      <div className="max-w-7xl mx-auto space-y-6">
+        
+        {/* CABECERA Y PUERTA DE ENTRADA */}
+        <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl flex flex-col md:flex-row items-center justify-between gap-4">
           <div>
-            <h1 className="text-base font-bold text-white tracking-tight">OmniLogistics OS</h1>
-            <p className="text-xs text-slate-400">Plataforma Universal de Análisis B2B</p>
+            <h1 className="text-2xl font-black text-white flex items-center gap-2">
+              <span className="text-blue-500">⚡</span> OmniLogistics OS
+            </h1>
+            <p className="text-emerald-400 font-bold text-sm">Cerebro OmniParser Activo (Visión Espacial)</p>
           </div>
-        </div>
-        <div className="flex items-center space-x-2">
-          <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse"></span>
-          <span className="text-xs text-slate-300 font-mono">Backend Render: Conectado</span>
-        </div>
-      </header>
-
-      <main className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6">
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-wrap gap-6 items-center justify-between shadow-lg">
-          <div className="flex items-center space-x-4 bg-slate-950 p-3 rounded-lg border border-slate-800 w-full md:w-auto">
-            <input 
-              type="file" 
-              accept=".xlsx, .xls, .csv"
-              ref={fileInputRef} 
-              onChange={(e) => setFile(e.target.files[0])}
-              className="text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-900/50 file:text-blue-300 hover:file:bg-blue-800/50 cursor-pointer"
-            />
-            
-            <div className="flex items-center space-x-2">
-              <button 
-                onClick={handleFileUpload}
-                disabled={isLoading || !file}
-                className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors shadow-md"
-              >
-                {isLoading ? 'Analizando...' : 'Procesar Excel'}
-              </button>
-
-              {(matrixData || file) && (
-                <button 
-                  onClick={handleClear}
-                  className="bg-slate-800 hover:bg-rose-900/80 text-slate-300 hover:text-rose-200 border border-slate-700 hover:border-rose-700 text-xs font-medium px-3 py-2 rounded-lg transition-colors shadow-md"
-                >
-                  ✕ Limpiar
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-6">
-            <label className="flex items-center space-x-2 cursor-pointer bg-slate-950 px-3 py-2 rounded-lg border border-slate-800 text-xs text-slate-300 hover:bg-slate-800 transition-colors">
-              <input 
-                type="checkbox"
-                checked={freezePanes}
-                onChange={(e) => setFreezePanes(e.target.checked)}
-                className="rounded border-slate-700 bg-slate-800 text-blue-600 cursor-pointer"
-              />
-              <span className="font-medium">Inmovilizar Paneles</span>
+          
+          <div className="flex items-center gap-4">
+            <label className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-lg font-bold cursor-pointer transition-colors shadow-lg">
+              📂 Subir Archivo
+              <input type="file" accept=".xlsx, .xls, .csv" className="hidden" onChange={handleFileUpload} />
             </label>
-
-            {/* SELECTORES DE AÑOS */}
-            <div className="flex items-center space-x-3">
-              <select value={yearA} onChange={(e) => setYearA(e.target.value)} className="bg-slate-800 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2 outline-none">
-                <option value="2024">2024</option>
-                <option value="2025">2025</option>
-              </select>
-              <span className="text-slate-500 text-sm">vs</span>
-              <select value={yearB} onChange={(e) => setYearB(e.target.value)} className="bg-slate-800 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2 outline-none">
-                <option value="2025">2025</option>
-                <option value="2026">2026</option>
-              </select>
-            </div>
+            {fileData && (
+              <button onClick={() => {setFileData(null); setWorkbook(null); setSheetNames([]);}} className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-3 rounded-lg font-bold border border-slate-700">
+                Limpiar Memoria
+              </button>
+            )}
           </div>
         </div>
 
-        {matrixData ? (
-          <div className="space-y-4">
-            {kpis && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {kpis.map((kpi, idx) => (
-                  <div key={idx} className="bg-slate-900 p-5 rounded-xl border border-slate-800 flex items-center space-x-4 shadow-sm">
-                    <div className={`p-3 bg-${kpi.color}-900/30 text-${kpi.color}-400 rounded-lg border border-${kpi.color}-900/50 text-xl`}>
-                      {kpi.icon}
-                    </div>
-                    <div>
-                      <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mb-1">{kpi.title}</p>
-                      <h4 className="text-2xl font-bold text-slate-100 font-mono">{formatValue(kpi.value)}</h4>
-                      {kpi.note && <p className="text-[9px] text-slate-500 mt-1 font-mono">{kpi.note}</p>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* 🔥 AQUÍ ESTÁ EL COMPONENTE DE GRÁFICOS CON LOS AÑOS INYECTADOS 🔥 */}
-            <DynamicCharts columns={matrixData.columnas} data={filteredRows} yearA={yearA} yearB={yearB} />
-
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-1 shadow-lg">
-              <div className="flex flex-col sm:flex-row justify-between items-center bg-slate-950 p-4 rounded-t-lg border-b border-slate-800 gap-4">
-                <div className="flex items-center gap-3">
-                  <h3 className="text-sm font-bold text-slate-200 flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-                    {matrixData.archivo}
-                  </h3>
-                  <span className="bg-emerald-900/40 text-emerald-400 text-xs font-semibold px-3 py-1 rounded-full border border-emerald-800 hidden md:inline-block">
-                    Modo Adaptativo 🚥
-                  </span>
-                </div>
-                
-                <div className="flex items-center space-x-3 w-full sm:w-auto">
-                  <div className="relative w-full sm:w-64">
-                    <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-500">🔍</span>
-                    <input
-                      type="text"
-                      placeholder="Filtrar datos..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded-lg pl-10 pr-3 py-2 outline-none focus:border-blue-500 transition-colors"
-                    />
-                  </div>
-                  <button 
-                    onClick={exportToCSV}
-                    className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-sm font-medium px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
-                  >
-                    <span>📥</span> Exportar
-                  </button>
-                </div>
-              </div>
-
-              <div className="overflow-auto rounded-b-lg max-h-[50vh] relative">
-                <table className="w-full text-left text-xs text-slate-300 border-collapse">
-                  <thead className="bg-slate-800 text-slate-200 sticky top-0 z-20">
-                    <tr>
-                      {matrixData.columnas?.map((col, idx) => {
-                        const isFirst = idx === 0 && freezePanes;
-                        return (
-                          <th 
-                            key={idx} 
-                            className={`p-2 border-b border-slate-700 whitespace-nowrap bg-slate-800 font-semibold text-center ${
-                              isFirst ? 'sticky left-0 z-30 border-r border-slate-700 bg-slate-800 shadow-md' : ''
-                            }`}
-                          >
-                            {renderHeaderTitle(col)}
-                          </th>
-                        );
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800 bg-slate-950 font-mono">
-                    {filteredRows.length > 0 ? (
-                      filteredRows.map((row, rowIndex) => (
-                        <tr key={rowIndex} className="hover:bg-slate-900/80 transition-colors">
-                          {matrixData.columnas.map((col, colIndex) => {
-                            const isFirst = colIndex === 0 && freezePanes;
-                            const cellClass = isFirst 
-                                ? 'sticky left-0 z-10 bg-slate-950 border-r border-slate-800 shadow-md font-bold text-blue-300' 
-                                : getCellColor(row[col], col);
-
-                            return (
-                              <td 
-                                key={colIndex} 
-                                className={`p-2 text-center whitespace-nowrap border-r border-slate-900 text-[11px] ${cellClass}`}
-                              >
-                                {formatValue(row[col])}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={matrixData.columnas?.length || 1} className="p-8 text-center text-slate-400">
-                          No se encontraron resultados para "{searchTerm}".
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+        {/* INTERFAZ MULTI-PESTAÑA (La intuición de profundidad) */}
+        {sheetNames.length > 1 && !fileData && (
+          <div className="bg-indigo-950/40 border border-indigo-500/50 p-8 rounded-xl shadow-2xl text-center animate-fade-in">
+            <div className="text-5xl mb-4">🤖</div>
+            <h2 className="text-2xl font-bold text-white mb-2">¡He detectado múltiples dimensiones!</h2>
+            <p className="text-indigo-200 mb-6">Este archivo de Excel contiene {sheetNames.length} ecosistemas (Hojas) diferentes. ¿Cuál quieres que aplane y analice hoy?</p>
+            <div className="flex flex-wrap justify-center gap-3">
+              {sheetNames.map((sheet, idx) => (
+                <button 
+                  key={idx} 
+                  onClick={() => processSheet(workbook, sheet)}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 px-6 rounded-full shadow-lg border border-indigo-400 transition-transform transform hover:scale-105"
+                >
+                  📄 {sheet}
+                </button>
+              ))}
             </div>
-          </div>
-        ) : (
-          <div className="bg-slate-900 border border-slate-800 rounded-xl min-h-[400px] flex flex-col items-center justify-center py-20 text-center shadow-lg">
-            <div className="w-12 h-12 bg-slate-800 rounded-full flex items-center justify-center mb-3 text-slate-400 text-xl">🚀</div>
-            <h3 className="text-slate-200 font-semibold text-base mb-1">Esperando Datos</h3>
-            <p className="text-slate-400 text-sm max-w-md">Sube cualquier archivo Excel o CSV para generar tableros y KPIs adaptativos en tiempo real.</p>
           </div>
         )}
-      </main>
+
+        {/* RENDER DEL TABLERO PERFECTO */}
+        {fileData && fileData.length > 0 && (
+          <DynamicCharts 
+            columns={Object.keys(fileData[0])} 
+            data={fileData} 
+            yearA="2025" 
+            yearB="2026" 
+          />
+        )}
+
+      </div>
     </div>
   );
 }

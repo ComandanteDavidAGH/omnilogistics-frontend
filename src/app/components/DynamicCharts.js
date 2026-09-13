@@ -4,9 +4,16 @@ import { ResponsiveContainer, BarChart, Bar, AreaChart, Area, LineChart, Line, X
 
 export default function DynamicCharts({ columns, data, yearA, yearB }) {
   
-  // ------------------------------------------------------------------------
-  // 1. ESCÁNER COGNITIVO (Detección de variables de la tabla)
-  // ------------------------------------------------------------------------
+  // 1. TODOS LOS ESTADOS ARRIBA (Regla de oro de React)
+  const [botApproved, setBotApproved] = useState(false);
+  const [botConfig, setBotConfig] = useState({ stage: 1, xAxis: '', enableMath: false });
+  const [metricChart1, setMetricChart1] = useState('');
+  const [metricChart2, setMetricChart2] = useState('');
+  const [activeTab, setActiveTab] = useState('');
+  const [c1, setC1] = useState('bar');
+  const [c2, setC2] = useState('area');
+
+  // 2. ESCÁNER COGNITIVO
   const { textCols, numCols, hasSemana, hasCinta, hasYears } = useMemo(() => {
     if (!columns || !data || data.length === 0) return { textCols: [], numCols: [], hasSemana: false, hasCinta: false, hasYears: false };
     
@@ -20,29 +27,20 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
     return { textCols: tCols.length > 0 ? tCols : columns, numCols: nCols, hasSemana: hSemana, hasCinta: hCinta, hasYears: hYears };
   }, [columns, data, yearA, yearB]);
 
-  // ------------------------------------------------------------------------
-  // 2. ESTADOS DEL COPILOTO Y TABLERO
-  // ------------------------------------------------------------------------
-  const [botApproved, setBotApproved] = useState(false);
-  const [botConfig, setBotConfig] = useState({ stage: 1, xAxis: '', enableMath: false });
-
-  // Autoconfiguración inicial cuando llega data nueva
+  // Autoconfiguración inicial
   useEffect(() => {
     if (hasSemana && hasCinta) {
       setBotConfig({ stage: 4, xAxis: 'FUSION_BANANERA', enableMath: true });
     } else if (hasYears) {
-      setBotConfig({ stage: 3, xAxis: textCols[0] || columns[0], enableMath: false });
+      setBotConfig({ stage: 3, xAxis: textCols[0] || columns[0] || '', enableMath: false });
     } else {
-      setBotConfig({ stage: 1, xAxis: textCols[0] || columns[0], enableMath: false });
+      setBotConfig({ stage: 1, xAxis: textCols[0] || columns[0] || '', enableMath: false });
     }
-    setBotApproved(false); // Obliga a pasar por el bot con cada archivo nuevo
+    setBotApproved(false); 
   }, [columns, hasSemana, hasCinta, hasYears, textCols]);
 
   const isUltra = botConfig.stage === 4;
 
-  // ------------------------------------------------------------------------
-  // 3. MOTORES DE PROCESAMIENTO (Bananero vs Estándar)
-  // ------------------------------------------------------------------------
   const getBaseName = (rawCol) => {
     if (!rawCol) return '';
     let lower = rawCol.toLowerCase();
@@ -62,10 +60,6 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
 
   const metricsList = isUltra ? ultraMetrics : numCols;
 
-  const [metricChart1, setMetricChart1] = useState('');
-  const [metricChart2, setMetricChart2] = useState('');
-  const [activeTab, setActiveTab] = useState('');
-
   // Actualizar selectores al aprobar el bot
   useEffect(() => {
     if (botApproved) {
@@ -77,10 +71,10 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
 
   const getExactCol = (metricName, targetYear) => columns.find(col => getBaseName(col) === metricName && col.includes(String(targetYear))) || null;
 
+  // MOTOR DE DATOS
   const chartData = useMemo(() => {
     if (!botApproved || !data || data.length === 0) return [];
     
-    // MODO ULTRA BANANERO (Semana + Cinta + Matemática Inversa)
     if (isUltra) {
       const dimSemana = columns.find(c => c.toLowerCase().includes('semana')) || '';
       const dimCinta = columns.find(c => c.toLowerCase().includes('cinta')) || '';
@@ -116,10 +110,7 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
         });
         return newRow;
       });
-    } 
-    
-    // MODO ESTÁNDAR / CAMALEÓN (Inventarios, Logística, Plana)
-    else {
+    } else {
       const map = {};
       data.forEach(row => {
         const key = String(row[botConfig.xAxis] || 'Sin Asignar').trim();
@@ -172,12 +163,9 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
   }, [chartData, isUltra, metricChart1, metricChart2, yearA, yearB]);
 
 
-  // ------------------------------------------------------------------------
-  // 4. GENERADOR XML EXCEL UNIVERSAL (SE ADAPTA AL MODO)
-  // ------------------------------------------------------------------------
+  // EXPORTADOR EXCEL
   const exportFormattedExcel = () => {
     const esc = (str) => String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    
     let xml = `<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?>
     <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
     <Styles>
@@ -189,7 +177,6 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
     </Styles>`;
 
     if (isUltra) {
-      // EXCEL MULTI-HOJA BANANERO
       ultraMetrics.forEach(metric => {
         const safeSheetName = esc(metric.substring(0, 30).replace(/[\\/*?:\[\]]/g, ''));
         xml += `<Worksheet ss:Name="${safeSheetName}"><Table><Column ss:Width="180"/><Column ss:Width="140"/><Column ss:Width="140"/><Column ss:Width="140"/>`;
@@ -207,11 +194,10 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
         xml += `</Table></Worksheet>`;
       });
     } else {
-      // EXCEL PLANO UNIVERSAL (Inventario / Logística)
       xml += `<Worksheet ss:Name="Base_Consolidada"><Table>`;
       xml += `<Column ss:Width="200"/>`; numCols.forEach(() => xml += `<Column ss:Width="130"/>`);
       xml += `<Row ss:Height="30"><Cell ss:MergeAcross="${numCols.length}" ss:StyleID="TitleHdr"><Data ss:Type="String">MATRIZ CONSOLIDADA DE OPERACIONES</Data></Cell></Row>`;
-      xml += `<Row ss:Height="24"><Cell ss:StyleID="TableHdrLeft"><Data ss:Type="String">${esc(botConfig.xAxis.toUpperCase())}</Data></Cell>`;
+      xml += `<Row ss:Height="24"><Cell ss:StyleID="TableHdrLeft"><Data ss:Type="String">${esc((botConfig.xAxis || 'Nombres').toUpperCase())}</Data></Cell>`;
       numCols.forEach(c => xml += `<Cell ss:StyleID="TableHdr"><Data ss:Type="String">${esc(c)}</Data></Cell>`);
       xml += `</Row>`;
       chartData.forEach(row => {
@@ -231,7 +217,7 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
 
 
   // ------------------------------------------------------------------------
-  // INTERFAZ 1: EL COPILOTO (BOT) DE CONFIGURACIÓN
+  // PANTALLA 1: EL COPILOTO
   // ------------------------------------------------------------------------
   if (!botApproved) {
     return (
@@ -265,7 +251,6 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
 
         <div className="bg-slate-900 p-5 rounded-lg border border-slate-700 space-y-4 mb-6">
           <h3 className="text-white font-bold mb-2">⚙️ Confirma tu configuración de Ejes:</h3>
-          
           <div className="flex flex-col md:flex-row gap-6">
             <div className="flex-1 space-y-2">
               <label className="text-xs font-bold text-slate-400 uppercase">Eje Principal (X - Agrupación)</label>
@@ -291,11 +276,8 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
   }
 
   // ------------------------------------------------------------------------
-  // INTERFAZ 2: TABLERO GERENCIAL (Se muestra tras aprobar al bot)
+  // PANTALLA 2: TABLERO GERENCIAL
   // ------------------------------------------------------------------------
-  const [c1, setC1] = useState('bar');
-  const [c2, setC2] = useState('area');
-
   const renderChart = (type, metricKey, colorA, colorB) => {
     const kA = isUltra ? `${metricKey}_${yearA}` : metricKey;
     const kB = isUltra ? `${metricKey}_${yearB}` : metricKey;
@@ -333,28 +315,20 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
   return (
     <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl shadow-2xl my-6 space-y-6 print:bg-white print:text-black print:border-none print:shadow-none">
       
-      {/* CABECERA */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 border-b border-slate-800 print:border-b-2 print:border-slate-300">
         <div>
           <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2 print:text-slate-900">
             <span className="text-blue-500">⚡</span> Motor Analítico OS
           </h3>
-          <p className="text-xs text-blue-400 font-semibold uppercase">
-            MODO: {isUltra ? 'AGRÍCOLA ULTRA (Deducción Activa)' : 'ESTÁNDAR UNIVERSAL'} | EJE: {botConfig.xAxis}
-          </p>
+          <p className="text-xs text-blue-400 font-semibold uppercase">MODO: {isUltra ? 'AGRÍCOLA ULTRA' : 'ESTÁNDAR'} | EJE: {botConfig.xAxis}</p>
         </div>
 
         <div className="flex gap-3 print:hidden">
-          <button onClick={() => setBotApproved(false)} className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold py-2 px-3 rounded-lg border border-slate-700 transition-all">
-            ⚙️ Re-Configurar
-          </button>
-          <button onClick={exportFormattedExcel} className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-2 px-4 rounded-lg shadow-lg flex items-center gap-2 transition-all">
-            📊 Excel Formateado
-          </button>
+          <button onClick={() => setBotApproved(false)} className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold py-2 px-3 rounded-lg border border-slate-700 transition-all">⚙️ Re-Configurar</button>
+          <button onClick={exportFormattedExcel} className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-2 px-4 rounded-lg shadow-lg flex items-center gap-2 transition-all">📊 Excel Formateado</button>
         </div>
       </div>
 
-      {/* IA */}
       <div className="bg-indigo-950/30 border border-indigo-500/50 rounded-xl p-5 print:bg-slate-50 print:border-slate-300">
         <h4 className="text-sm font-extrabold text-indigo-300 flex items-center gap-2 mb-2 print:text-slate-800">🧠 Observaciones IA</h4>
         <ul className="space-y-1">
@@ -362,7 +336,6 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
         </ul>
       </div>
 
-      {/* GRÁFICOS */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 print:grid-cols-2">
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800/80">
           <div className="flex items-center justify-between pb-3 border-b border-slate-800/60 mb-4 print:hidden">
@@ -389,9 +362,7 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
         </div>
       </div>
 
-      {/* TABLA DINÁMICA */}
       <div className="mt-8 bg-slate-950 border border-slate-800 rounded-xl overflow-hidden print:bg-white print:border-slate-300">
-        
         {isUltra && (
           <div className="flex overflow-x-auto bg-slate-900 border-b border-slate-800 print:hidden custom-scrollbar">
             {ultraMetrics.map((metric, idx) => (
@@ -406,7 +377,7 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
           <table className="w-full text-[10px] text-left text-slate-300 print:text-slate-800 border-collapse whitespace-nowrap">
             <thead className="uppercase bg-slate-950 text-slate-400 sticky top-0 shadow-md">
               <tr>
-                <th className="px-4 py-3 border-b border-slate-700">{isUltra ? 'SEMANA - CINTA' : botConfig.xAxis}</th>
+                <th className="px-4 py-3 border-b border-slate-700">{isUltra ? 'SEMANA - CINTA' : (botConfig.xAxis || 'Categoría')}</th>
                 {isUltra ? (
                   <>
                     <th className="px-4 py-3 border-b border-slate-700 text-blue-400">{activeTab} ({yearA})</th>
@@ -442,7 +413,6 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
           </table>
         </div>
       </div>
-
     </div>
   );
 }
