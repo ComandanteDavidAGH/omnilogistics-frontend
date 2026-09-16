@@ -4,7 +4,6 @@ import { useState, useRef } from 'react';
 export default function Page() {
   const [file, setFile] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  // Reemplazamos la matriz vieja por los resultados inteligentes del backend
   const [genesisResults, setGenesisResults] = useState(null);
   
   const fileInputRef = useRef(null);
@@ -33,8 +32,9 @@ export default function Page() {
       
       const data = await response.json();
       
-      // ⚡ EL TRASPLANTE: La pantalla recibe la inteligencia procesada desde el servidor
+      // ⚡ RECEPCIÓN DE LA NUEVA CAPA DE CALIDAD
       setGenesisResults({
+        calidad_datos: data.calidad_datos,
         analisis: data.analisis,
         hallazgos: data.hallazgos
       });
@@ -63,8 +63,8 @@ export default function Page() {
         <div className="flex items-center space-x-3">
           <div className="bg-emerald-600 text-white font-bold p-2 rounded-lg text-xs tracking-wider">GENESIS</div>
           <div>
-            <h1 className="text-base font-bold text-white tracking-tight">OMNI CORE v0.2</h1>
-            <p className="text-xs text-slate-400">Motor de Inteligencia Económica Multi-Capa</p>
+            <h1 className="text-base font-bold text-white tracking-tight">OMNI CORE v0.3</h1>
+            <p className="text-xs text-slate-400">Motor de Inteligencia & Data Quality</p>
           </div>
         </div>
         <div className="flex items-center space-x-2">
@@ -75,7 +75,7 @@ export default function Page() {
 
       <main className="flex-1 p-6 max-w-5xl w-full mx-auto space-y-6">
         
-        {/* PANEL DE INGESTA CERO-CLICK */}
+        {/* PANEL DE INGESTA */}
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
           <div className="flex flex-wrap gap-4 items-center justify-between">
             <div className="flex items-center space-x-4 w-full md:w-auto">
@@ -93,7 +93,7 @@ export default function Page() {
                   disabled={isLoading || !file}
                   className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 text-white text-xs font-bold px-5 py-2 rounded-lg transition-colors shadow-md"
                 >
-                  {isLoading ? 'Analizando 5 Capas...' : 'Ejecutar Auditoría Multi-Pestaña'}
+                  {isLoading ? 'Analizando Calidad y Fraude...' : 'Ejecutar Auditoría Multi-Pestaña'}
                 </button>
 
                 {(genesisResults || file) && (
@@ -106,9 +106,55 @@ export default function Page() {
           </div>
         </div>
 
-        {/* RADAR ECONÓMICO DIRECTO DEL BACKEND */}
+        {/* RESULTADOS DE GENESIS */}
         {genesisResults ? (
           <div className="space-y-6 animate-fade-in">
+            
+            {/* 🛡️ DATA QUALITY GATE (NUEVO) */}
+            {genesisResults.calidad_datos && (
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-md">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                  <div className="md:w-1/3">
+                    <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2 mb-1">
+                      <span>🛡️</span> Compuerta de Calidad de Datos
+                    </h3>
+                    <p className="text-[11px] text-slate-400">
+                      Confiabilidad del análisis: {' '}
+                      <strong className={`
+                        ${genesisResults.calidad_datos.nivelConfianza === 'ALTA' ? 'text-emerald-400' : 
+                          genesisResults.calidad_datos.nivelConfianza === 'MEDIA' ? 'text-amber-400' : 'text-rose-400'}
+                      `}>
+                        {genesisResults.calidad_datos.nivelConfianza}
+                      </strong>
+                    </p>
+                  </div>
+                  
+                  <div className="flex-1 w-full">
+                    <div className="flex justify-between text-[10px] mb-1.5 font-bold text-slate-300">
+                      <span className="uppercase tracking-wider">Score Global de Ingesta</span>
+                      <span>{genesisResults.calidad_datos.scoreGlobal}%</span>
+                    </div>
+                    <div className="w-full bg-slate-950 rounded-full h-2.5 border border-slate-800 overflow-hidden">
+                      <div 
+                        className={`h-full rounded-full transition-all duration-1000 ${
+                          genesisResults.calidad_datos.scoreGlobal >= 90 ? 'bg-emerald-500' : 
+                          genesisResults.calidad_datos.scoreGlobal >= 70 ? 'bg-amber-500' : 'bg-rose-500'
+                        }`} 
+                        style={{ width: `${genesisResults.calidad_datos.scoreGlobal}%` }}
+                      ></div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4 text-[10px] text-slate-400 font-mono bg-slate-950 p-2.5 rounded-lg border border-slate-800/50">
+                    <div className="flex flex-col"><span className="text-slate-500 uppercase text-[9px] mb-0.5">Unicidad</span><span className="font-bold text-slate-200">{genesisResults.calidad_datos.metricas.unicidad}%</span></div>
+                    <div className="flex flex-col border-l border-slate-800 pl-4"><span className="text-slate-500 uppercase text-[9px] mb-0.5">Completitud</span><span className="font-bold text-slate-200">{genesisResults.calidad_datos.metricas.completitud}%</span></div>
+                    <div className="flex flex-col border-l border-slate-800 pl-4"><span className="text-slate-500 uppercase text-[9px] mb-0.5">Validez</span><span className="font-bold text-slate-200">{genesisResults.calidad_datos.metricas.validez}%</span></div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* RADAR ECONÓMICO */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 shadow-md">
                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Operaciones Analizadas</p>
@@ -122,12 +168,14 @@ export default function Page() {
                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Margen Global</p>
                 <h4 className="text-2xl font-bold text-blue-400 font-mono">{genesisResults.analisis.margenGlobal.toFixed(2)}%</h4>
               </div>
-              <div className="bg-rose-950/30 p-4 rounded-xl border border-rose-900/50 shadow-md">
-                <p className="text-[10px] text-rose-400 font-bold uppercase tracking-wider mb-1 flex items-center gap-1">⚠️ Fuga Detectada</p>
-                <h4 className="text-2xl font-bold text-rose-500 font-mono">{formatMoney(genesisResults.analisis.dineroEnRiesgo)}</h4>
+              <div className="bg-rose-950/30 p-4 rounded-xl border border-rose-900/50 shadow-md relative overflow-hidden">
+                <div className={`absolute left-0 top-0 w-1 h-full ${genesisResults.calidad_datos && genesisResults.calidad_datos.scoreGlobal < 70 ? 'bg-amber-500' : 'bg-rose-500'}`}></div>
+                <p className="text-[10px] text-rose-400 font-bold uppercase tracking-wider mb-1 flex items-center gap-1">⚠️ {genesisResults.calidad_datos && genesisResults.calidad_datos.scoreGlobal < 70 ? 'Exposición Estimada' : 'Fuga Confirmada'}</p>
+                <h4 className="text-2xl font-bold text-rose-500 font-mono pl-2">{formatMoney(genesisResults.analisis.dineroEnRiesgo)}</h4>
               </div>
             </div>
 
+            {/* HALLAZGOS PRIORITARIOS */}
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg">
               <div className="border-b border-slate-800 pb-4 mb-4 flex justify-between items-center">
                 <div>
@@ -181,8 +229,8 @@ export default function Page() {
         ) : (
           <div className="bg-slate-900 border border-slate-800 rounded-xl min-h-[400px] flex flex-col items-center justify-center py-20 text-center shadow-lg">
             <div className="w-14 h-14 bg-slate-800 rounded-full flex items-center justify-center mb-4 text-slate-400 text-2xl">🧠</div>
-            <h3 className="text-slate-200 font-semibold text-base mb-2">Motor GENESIS v0.2 Inactivo</h3>
-            <p className="text-slate-400 text-sm max-w-md">Carga el laboratorio de datos. El motor procesará todas las pestañas simultáneamente desde el servidor.</p>
+            <h3 className="text-slate-200 font-semibold text-base mb-2">Motor GENESIS v0.3 Inactivo</h3>
+            <p className="text-slate-400 text-sm max-w-md">Carga el laboratorio de datos. El sistema evaluará la calidad de la información antes de calcular los impactos.</p>
           </div>
         )}
       </main>
