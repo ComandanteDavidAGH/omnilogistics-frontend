@@ -1,150 +1,37 @@
 'use client';
 import { useState, useRef } from 'react';
-import * as XLSX from 'xlsx';
 
 export default function Page() {
   const [file, setFile] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [matrixData, setMatrixData] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-
-  const [sheetNames, setSheetNames] = useState([]);
-  const [selectedSheet, setSelectedSheet] = useState('');
-  const [workbook, setWorkbook] = useState(null);
   
-  const [subTables, setSubTables] = useState([]);
-  const [selectedSubTableIndex, setSelectedSubTableIndex] = useState(null);
-
   const fileInputRef = useRef(null);
-
-  // ESCÁNER DE ARCHIPIÉLAGOS (INTACTO)
-  const selectSheetAndDetectTables = (wb, sheetName) => {
-    setSelectedSheet(sheetName);
-    setMatrixData(null);
-    setSubTables([]);
-    setSelectedSubTableIndex(null);
-
-    const ws = wb.Sheets[sheetName];
-    const rawAoA = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-
-    let islands = [];
-    let inIsland = false;
-    let currentIsland = null;
-    let emptyCount = 0;
-
-    for (let i = 0; i < rawAoA.length; i++) {
-      const row = rawAoA[i] || [];
-      const filledCells = row.filter(cell => cell !== null && cell !== undefined && String(cell).trim() !== '');
-      const filledCount = filledCells.length;
-
-      if (filledCount > 0) {
-        emptyCount = 0;
-        if (!inIsland) {
-          inIsland = true;
-          currentIsland = { start: i, end: i, name: `Matriz ${islands.length + 1}` };
-          if (filledCount <= 4) {
-            currentIsland.name = String(filledCells[0]).replace(/ /g, '').trim();
-          }
-        } else {
-          currentIsland.end = i;
-          if (currentIsland.start === i - 1 && filledCount <= 4 && currentIsland.name.startsWith('Matriz')) {
-            currentIsland.name = String(filledCells[0]).replace(/ /g, '').trim();
-          }
-        }
-      } else {
-        emptyCount++;
-        if (emptyCount >= 1 && inIsland) {
-          islands.push({ ...currentIsland });
-          inIsland = false;
-        }
-      }
-    }
-    if (inIsland && currentIsland) islands.push({ ...currentIsland });
-    islands = islands.filter(isl => (isl.end - isl.start) >= 2);
-
-    setSubTables(islands);
-    if (islands.length === 1) {
-      setSelectedSubTableIndex(0);
-    }
-  };
 
   const handleFileSelection = (e) => {
     const selectedFile = e.target.files[0];
     setFile(selectedFile);
     setMatrixData(null);
-    setSheetNames([]);
-    setSelectedSheet('');
-    setWorkbook(null);
-    setSubTables([]);
-    setSelectedSubTableIndex(null);
-
-    if (selectedFile) {
-      const reader = new FileReader();
-      reader.onload = (evt) => {
-        const bstr = evt.target.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
-        setWorkbook(wb);
-        setSheetNames(wb.SheetNames);
-        
-        if (wb.SheetNames.length === 1) {
-          selectSheetAndDetectTables(wb, wb.SheetNames[0]);
-        }
-      };
-      reader.readAsBinaryString(selectedFile);
-    }
   };
 
   const handleFileUpload = async () => {
-    if (!file) { return; }
+    if (!file) return;
     setIsLoading(true);
+    
+    // ⚡ INGESTA OMNI: Enviamos el archivo original COMPLETO, sin cortarlo.
     const formData = new FormData();
-    let fileToSend = file;
-
-    if (workbook && selectedSheet) {
-      const ws = workbook.Sheets[selectedSheet];
-      const rawAoA = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-      let matrixToProcess = rawAoA;
-
-      if (subTables.length > 0 && selectedSubTableIndex !== null) {
-        const island = subTables[selectedSubTableIndex];
-        matrixToProcess = rawAoA.slice(island.start, island.end + 1);
-      }
-
-      let absoluteMaxCols = 0;
-      for (let i = 0; i < Math.min(30, matrixToProcess.length); i++) {
-        const row = matrixToProcess[i] || [];
-        const filledCols = row.filter(cell => cell && String(cell).trim() !== '').length;
-        if (filledCols > absoluteMaxCols) absoluteMaxCols = filledCols;
-      }
-
-      let headerRowIdx = 0;
-      const densityThreshold = Math.max(2, Math.floor(absoluteMaxCols * 0.75));
-      for (let i = 0; i < Math.min(30, matrixToProcess.length); i++) {
-        const row = matrixToProcess[i] || [];
-        const filledCols = row.filter(cell => cell && String(cell).trim() !== '').length;
-        if (filledCols >= densityThreshold) { headerRowIdx = i; break; }
-      }
-
-      const cleanedAoA = matrixToProcess.slice(headerRowIdx);
-      const cleanedWs = XLSX.utils.aoa_to_sheet(cleanedAoA);
-      
-      const newWb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(newWb, cleanedWs, selectedSheet);
-      const wbout = XLSX.write(newWb, { bookType: 'xlsx', type: 'array' });
-      const blob = new Blob([wbout], { type: 'application/octet-stream' });
-      
-      fileToSend = new File([blob], file.name, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    }
-
-    formData.append("file", fileToSend);
+    formData.append("file", file);
 
     try {
       const BACKEND_URL = "https://omnilogistics-backend-6bbn.onrender.com/api/procesar-matriz"; 
       const response = await fetch(BACKEND_URL, { method: "POST", body: formData });
+      
       if (!response.ok) {
         const errData = await response.json();
         throw new Error(errData.detail || "El servidor rechazó el archivo");
       }
+      
       const data = await response.json();
       setMatrixData(data);
     } catch (error) {
@@ -159,10 +46,6 @@ export default function Page() {
     setFile(null);
     setMatrixData(null);
     setSearchTerm('');
-    setSheetNames([]); 
-    setSelectedSheet('');
-    setSubTables([]);
-    setSelectedSubTableIndex(null);
     if (fileInputRef.current) { fileInputRef.current.value = ''; }
   };
 
@@ -171,7 +54,7 @@ export default function Page() {
   };
 
   // =====================================================================
-  // ⚡ GENESIS CORE v0.1: MOTOR DE REGLAS Y DETECCIÓN ECONÓMICA
+  // ⚡ GENESIS CORE v0.1: MOTOR DE REGLAS (Se mantiene táctico en frontend por ahora)
   // =====================================================================
   const runGenesisCore = (rows) => {
     if (!rows || rows.length === 0) return null;
@@ -182,7 +65,6 @@ export default function Page() {
     let hallazgos = [];
 
     rows.forEach((row, index) => {
-      // Helper para buscar columnas aunque tengan espacios o nombres parecidos
       const getVal = (keyStr) => {
         const key = Object.keys(row).find(k => k.toLowerCase().includes(keyStr.toLowerCase()));
         return key ? parseFloat(row[key]) : null;
@@ -208,7 +90,7 @@ export default function Page() {
       if (!isNaN(ingreso)) totalIngresos += ingreso;
       if (!isNaN(costo)) totalCostos += costo;
 
-      // REGLA 1: MARGEN DESTRUIDO (Viajes a pérdida)
+      // REGLA 1: MARGEN DESTRUIDO
       if (margenPct !== null && margenPct <= 0) {
         const impacto = Math.abs(margen || (ingreso - costo));
         dineroEnRiesgo += impacto;
@@ -219,14 +101,15 @@ export default function Page() {
           titulo: `Pérdida Operativa - Viaje ${viaje}`,
           causa: otrosCostos > 1000 ? `Impacto severo por Costos Extraordinarios detectados (${formatMoney(otrosCostos)})` : 'El costo total superó los ingresos generados.',
           impacto: impacto,
-          vehiculo: vehiculo
+          vehiculo: vehiculo,
+          accion: `Auditar justificación de costos extraordinarios y retener pago de comisión al operador hasta aclarar.`
         });
       }
 
-      // REGLA 2: HUACHICOL O INEFICIENCIA (Rendimiento < 2.25 km/L)
+      // REGLA 2: HUACHICOL O INEFICIENCIA
       if (km && litros) {
         const rendimientoReal = km / litros;
-        const rendimientoEsperado = 2.6; // Patrón base ficticio
+        const rendimientoEsperado = 2.6; 
         if (rendimientoReal > 0 && rendimientoReal < 2.25) {
           const litrosDesperdiciados = litros - (km / rendimientoEsperado);
           const impactoCombustible = litrosDesperdiciados > 0 ? litrosDesperdiciados * precioDiesel : 0;
@@ -238,31 +121,21 @@ export default function Page() {
               prioridad: 2,
               tipo: 'FUGA_COMBUSTIBLE',
               titulo: `Consumo Anormal de Combustible - Viaje ${viaje}`,
-              causa: `Rendimiento de ${rendimientoReal.toFixed(2)} km/L (Desviación severa del patrón de ${rendimientoEsperado} km/L).`,
+              causa: `Rendimiento de ${rendimientoReal.toFixed(2)} km/L (Desviación del patrón de ${rendimientoEsperado} km/L).`,
               impacto: impactoCombustible,
-              vehiculo: vehiculo
+              vehiculo: vehiculo,
+              accion: `Cruzar bitácora de carga de diésel con telemetría GPS del motor para descartar extracción no autorizada.`
             });
           }
         }
       }
     });
 
-    // Ordenar hallazgos de mayor a menor dinero perdido
     hallazgos.sort((a, b) => b.impacto - a.impacto);
-    
-    // Limitar a los 10 peores hallazgos para no saturar al gerente
     const topHallazgos = hallazgos.slice(0, 10);
-
     const margenGlobal = totalIngresos > 0 ? ((totalIngresos - totalCostos) / totalIngresos) * 100 : 0;
 
-    return { 
-      totalIngresos, 
-      totalCostos, 
-      margenGlobal, 
-      dineroEnRiesgo, 
-      hallazgos: topHallazgos,
-      totalHallazgos: hallazgos.length
-    };
+    return { totalIngresos, totalCostos, margenGlobal, dineroEnRiesgo, hallazgos: topHallazgos, totalHallazgos: hallazgos.length };
   };
 
   const rowList = matrixData ? (matrixData.filas || matrixData.datos || matrixData.matriz || matrixData.data || []) : [];
@@ -292,7 +165,7 @@ export default function Page() {
 
       <main className="flex-1 p-6 max-w-5xl w-full mx-auto space-y-6">
         
-        {/* PANEL DE INGESTA DE DATOS */}
+        {/* PANEL DE INGESTA CERO-CLICK */}
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
           <div className="flex flex-wrap gap-4 items-center justify-between">
             <div className="flex items-center space-x-4 w-full md:w-auto">
@@ -307,10 +180,10 @@ export default function Page() {
               <div className="flex items-center space-x-2">
                 <button 
                   onClick={handleFileUpload}
-                  disabled={isLoading || !file || (sheetNames.length > 1 && !selectedSheet) || (subTables.length > 1 && selectedSubTableIndex === null)}
+                  disabled={isLoading || !file}
                   className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 text-white text-xs font-bold px-5 py-2 rounded-lg transition-colors shadow-md"
                 >
-                  {isLoading ? 'Analizando...' : 'Ejecutar Diagnóstico'}
+                  {isLoading ? 'Analizando...' : 'Ejecutar Auditoría Completa'}
                 </button>
 
                 {(matrixData || file) && (
@@ -334,41 +207,11 @@ export default function Page() {
               </div>
             )}
           </div>
-
-          {/* MENÚS DE SELECCIÓN DE HOJAS Y TABLAS */}
-          {sheetNames.length > 1 && (
-            <div className="mt-4 pt-4 border-t border-slate-800 flex items-center gap-3">
-              <span className="text-[11px] font-semibold text-slate-400">Seleccionar Fuente:</span>
-              <div className="flex flex-wrap gap-2">
-                {sheetNames.map((sheet, idx) => (
-                  <button key={idx} onClick={() => selectSheetAndDetectTables(workbook, sheet)} className={`text-[10px] px-3 py-1 rounded-full border transition-all ${selectedSheet === sheet ? 'bg-emerald-600 text-white border-emerald-500 shadow-md' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'}`}>
-                    📄 {sheet}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          {subTables.length > 1  && (
-            <div className="mt-3 pt-3 border-t border-slate-800/50 flex items-center gap-3">
-              <span className="text-[11px] font-semibold text-emerald-400">Bloques Detectados:</span>
-              <div className="flex flex-wrap gap-2">
-                {subTables.map((table, idx) => (
-                  <button key={idx} onClick={() => setSelectedSubTableIndex(idx)} className={`text-[10px] px-3 py-1 rounded-full border transition-all ${selectedSubTableIndex === idx ? 'bg-emerald-600 text-white border-emerald-500' : 'bg-slate-800 text-slate-400 border-slate-700'}`}>
-                    📊 {table.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* ========================================================= */}
-        {/* LA PANTALLA DE GENESIS: EL RADAR ECONÓMICO */}
-        {/* ========================================================= */}
+        {/* RADAR ECONÓMICO */}
         {genesisResults ? (
           <div className="space-y-6 animate-fade-in">
-            
-            {/* CABECERA FINANCIERA */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 shadow-md">
                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Operaciones Analizadas</p>
@@ -388,16 +231,13 @@ export default function Page() {
               </div>
             </div>
 
-            {/* LISTA DE HALLAZGOS (EL VENENO) */}
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg">
               <div className="border-b border-slate-800 pb-4 mb-4 flex justify-between items-center">
                 <div>
                   <h3 className="text-lg font-bold text-slate-100">Hallazgos Prioritarios</h3>
                   <p className="text-xs text-slate-400">GENESIS identificó {genesisResults.totalHallazgos} desviaciones que erosionan la rentabilidad.</p>
                 </div>
-                <span className="bg-slate-800 text-slate-300 text-[10px] font-bold px-3 py-1 rounded-md uppercase tracking-wider">
-                  Top 10 Fugas
-                </span>
+                <span className="bg-slate-800 text-slate-300 text-[10px] font-bold px-3 py-1 rounded-md uppercase tracking-wider">Top 10 Fugas</span>
               </div>
 
               {genesisResults.hallazgos.length > 0 ? (
@@ -413,14 +253,20 @@ export default function Page() {
                           <span className="text-[10px] text-slate-500 font-mono bg-slate-950 px-2 py-0.5 rounded border border-slate-800">Unidad: {hallazgo.vehiculo}</span>
                         </div>
                         <h4 className="text-sm font-bold text-slate-200 mb-1">{hallazgo.titulo}</h4>
-                        <p className="text-xs text-slate-400">{hallazgo.causa}</p>
+                        <p className="text-xs text-slate-400 mb-2">{hallazgo.causa}</p>
+                        
+                        {/* ⚡ NUEVO: ACCIÓN RECOMENDADA */}
+                        <div className="bg-slate-950/50 p-2 rounded border border-slate-800/80 inline-block">
+                          <p className="text-[10px] text-emerald-400 font-bold uppercase flex items-center gap-1">
+                            <span>⚡</span> Acción Sugerida:
+                          </p>
+                          <p className="text-xs text-slate-300 mt-0.5">{hallazgo.accion}</p>
+                        </div>
                       </div>
 
-                      <div className="text-left sm:text-right bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 w-full sm:w-auto">
+                      <div className="text-left sm:text-right bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 w-full sm:w-auto mt-3 sm:mt-0">
                         <p className="text-[10px] uppercase text-slate-500 font-bold mb-0.5">Impacto Estimado</p>
-                        <p className="text-lg font-bold font-mono text-rose-400">
-                          -{formatMoney(hallazgo.impacto)}
-                        </p>
+                        <p className="text-lg font-bold font-mono text-rose-400">-{formatMoney(hallazgo.impacto)}</p>
                       </div>
                       
                     </div>
@@ -440,7 +286,7 @@ export default function Page() {
           <div className="bg-slate-900 border border-slate-800 rounded-xl min-h-[400px] flex flex-col items-center justify-center py-20 text-center shadow-lg">
             <div className="w-14 h-14 bg-slate-800 rounded-full flex items-center justify-center mb-4 text-slate-400 text-2xl">🧠</div>
             <h3 className="text-slate-200 font-semibold text-base mb-2">Motor GENESIS Inactivo</h3>
-            <p className="text-slate-400 text-sm max-w-md">Carga el laboratorio de datos para que el motor identifique las fugas de dinero y rentabilidad oculta.</p>
+            <p className="text-slate-400 text-sm max-w-md">Carga el laboratorio de datos. El motor procesará todas las pestañas de forma simultánea.</p>
           </div>
         )}
       </main>
