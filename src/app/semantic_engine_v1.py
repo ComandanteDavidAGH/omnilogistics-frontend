@@ -3,13 +3,22 @@ import difflib
 
 class GenesisDataUnderstanding:
     def __init__(self):
-        # EL MODELO CANÓNICO EMPRESARIAL
+        # Modelo Canónico ahora incluye el tipo de dato esperado
         self.canonical_model = {
-            "VEHICLE_ID": ["placa", "unidad", "vehiculo", "tracto", "truck", "camion"],
-            "TRIP_DATE": ["fecha", "date", "salida", "emision", "dia"],
-            "REVENUE": ["ingreso", "tarifa", "flete", "facturado", "revenue", "importe"],
-            "COST_FUEL": ["diesel", "combustible", "gasolina", "fuel"]
+            "VEHICLE_ID": {"synonyms": ["placa", "unidad", "vehiculo", "tracto", "truck", "camion"], "expected_type": "text"},
+            "TRIP_DATE": {"synonyms": ["fecha", "date", "salida", "emision", "dia"], "expected_type": "date"},
+            "REVENUE": {"synonyms": ["ingreso", "tarifa", "flete", "facturado", "revenue", "importe"], "expected_type": "numeric"},
+            "COST_FUEL": {"synonyms": ["diesel", "combustible", "gasolina", "fuel"], "expected_type": "numeric"}
         }
+
+    def _infer_data_type(self, series: pd.Series) -> str:
+        """Infiere si la columna es texto, número o fecha basándose en su contenido."""
+        if pd.api.types.is_numeric_dtype(series):
+            return "numeric"
+        elif pd.api.types.is_datetime64_any_dtype(series) or "fecha" in str(series.name).lower():
+            return "date"
+        else:
+            return "text"
 
     def analyze_schema(self, excel_path: str):
         df = pd.read_excel(excel_path)
@@ -21,60 +30,57 @@ class GenesisDataUnderstanding:
             "ambiguities": []
         }
 
-        # 1. EVALUACIÓN SEMÁNTICA POR COLUMNA
         for col in raw_columns:
             col_str = str(col).lower().strip()
+            actual_type = self._infer_data_type(df[col])
+            
             best_match = None
             highest_confidence = 0.0
 
-            # Comparar contra nuestro modelo canónico
-            for canonical_key, synonyms in self.canonical_model.items():
+            for canonical_key, rules in self.canonical_model.items():
+                synonyms = rules["synonyms"]
+                expected_type = rules["expected_type"]
+                
                 for syn in synonyms:
-                    # Calcula similitud (0.0 a 1.0)
                     similitud = difflib.SequenceMatcher(None, col_str, syn).ratio()
-                    
-                    # Boost si la palabra clave está contenida exactamente
                     if syn in col_str:
                         similitud = max(similitud, 0.85)
+
+                    # PENALIZACIÓN CRÍTICA: Si el tipo de dato no coincide, matamos la confianza
+                    if expected_type != actual_type:
+                        similitud = similitud * 0.1  # Reduce la confianza drásticamente
 
                     if similitud > highest_confidence:
                         highest_confidence = similitud
                         best_match = canonical_key
 
-            # 2. DICTAMEN DE CONFIANZA
-            if highest_confidence >= 0.85:
-                # Alta confianza -> Mapeo directo
+            if highest_confidence >= 0.80:
                 understanding_result["fields_mapping"][col] = {
                     "canonical": best_match,
-                    "confidence": round(highest_confidence, 2)
+                    "confidence": round(highest_confidence, 2),
+                    "detected_type": actual_type
                 }
-            elif highest_confidence >= 0.50:
-                # Media confianza -> Ambigüedad (Requiere validación humana)
+            elif highest_confidence >= 0.30:
                 understanding_result["ambiguities"].append({
                     "original_column": col,
+                    "detected_type": actual_type,
                     "possible_match": best_match,
-                    "confidence": round(highest_confidence, 2),
-                    "reason": f"Similitud parcial detectada."
+                    "confidence": round(highest_confidence, 2)
                 })
             else:
-                # Baja confianza -> GENESIS no sabe qué es esto
                 understanding_result["ambiguities"].append({
                     "original_column": col,
+                    "detected_type": actual_type,
                     "possible_match": "UNKNOWN",
-                    "confidence": round(highest_confidence, 2),
-                    "reason": "No coincide con el modelo canónico."
+                    "confidence": round(highest_confidence, 2)
                 })
 
         return understanding_result
 
-# MODO LABORATORIO: Probar el motor sin necesidad de servidores
 if __name__ == "__main__":
     motor = GenesisDataUnderstanding()
-    
-    print("\n--- TEST: LAB 01 (Limpio) ---")
-    res_limpio = motor.analyze_schema("LAB_01_Clean.xlsx")
-    print(res_limpio)
-    
-    print("\n--- TEST: LAB 02 (Caótico) ---")
+    print("\n--- TEST: LAB 02 (Caótico) con Data Profiling ---")
     res_caotico = motor.analyze_schema("LAB_02_Chaotic.xlsx")
-    print(res_caotico)
+    
+    import json
+    print(json.dumps(res_caotico, indent=2, ensure_ascii=False))
