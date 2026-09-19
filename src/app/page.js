@@ -61,11 +61,19 @@ export default function Page() {
   const [manualResolutions, setManualResolutions] = useState({});
   const [genesisResults, setGenesisResults] = useState(null);
   const [persistentTasks, setPersistentTasks] = useState([]);
+  
+  // NUEVO ESTADO: Alertas Flotantes (Toasts)
+  const [toast, setToast] = useState(null);
 
   const fileInputRef = useRef(null);
   const BACKEND_URL_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "https://omnilogistics-backend-6bbn.onrender.com";
 
-  // Cargar tareas guardadas en PostgreSQL al iniciar
+  // Función para mostrar notificaciones temporalmente (3 segundos)
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
+  };
+
   const fetchTasks = async () => {
     try {
       const res = await fetch(`${BACKEND_URL_BASE}/api/v1/action-tasks`);
@@ -74,7 +82,7 @@ export default function Page() {
         setPersistentTasks(data);
       }
     } catch (e) {
-      console.error("Error cargando tareas de PostgreSQL:", e);
+      console.error("Error cargando tareas:", e);
     }
   };
 
@@ -100,10 +108,10 @@ export default function Page() {
     try {
       const response = await fetch(`${BACKEND_URL_BASE}/api/v1/data-understanding`, { method: "POST", body: formData });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || "Error en escaneo semántico");
+      if (!response.ok) throw new Error(data.detail || "Error en escaneo");
       setSemanticData(data);
+      showToast("✅ Archivo escaneado correctamente");
     } catch (error) {
-      console.error("Error semántico:", error);
       setErrorMsg(error.message);
     } finally {
       setIsLoading(false);
@@ -161,11 +169,11 @@ export default function Page() {
     try {
       const response = await fetch(`${BACKEND_URL_BASE}/api/procesar-matriz`, { method: "POST", body: formData });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || "Error al procesar matriz económica");
+      if (!response.ok) throw new Error(data.detail || "Error al procesar");
       setGenesisResults(data);
-      await fetchTasks(); // Actualizar la lista de tareas guardadas
+      await fetchTasks();
+      showToast("💾 Auditoría completada y guardada en base de datos");
     } catch (error) {
-      console.error("Error cálculo:", error);
       setErrorMsg(error.message);
     } finally {
       setIsLoading(false);
@@ -181,9 +189,14 @@ export default function Page() {
       });
       if (res.ok) {
         fetchTasks();
+        // Disparador visual inmediato del éxito en base de datos
+        showToast(`💾 Estado guardado en PostgreSQL: ${newStatus.replace('_', ' ')}`);
+      } else {
+        showToast("❌ Error al guardar en base de datos", "error");
       }
     } catch (e) {
-      console.error("Error actualizando tarea:", e);
+      console.error("Error:", e);
+      showToast("❌ Error de conexión", "error");
     }
   };
 
@@ -197,9 +210,7 @@ export default function Page() {
   };
 
   const formatMoney = (val) =>
-    val === null || val === undefined
-      ? 'N/D'
-      : new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(val);
+    val === null || val === undefined ? 'N/D' : new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(val);
 
   const steps = [
     { id: 'upload', label: '1. Ingesta', done: !!file },
@@ -211,11 +222,21 @@ export default function Page() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+      
+      {/* COMPONENTE TOAST (Notificación Flotante) */}
+      {toast && (
+        <div className={`fixed bottom-6 right-6 px-6 py-4 rounded-xl shadow-2xl font-bold text-sm z-50 flex items-center gap-3 transition-all duration-300 border
+          ${toast.type === 'error' ? 'bg-rose-950 text-rose-300 border-rose-800' : 'bg-emerald-950 text-emerald-300 border-emerald-800'}
+        `}>
+          <span>{toast.message}</span>
+        </div>
+      )}
+
       <header className="border-b border-slate-800 bg-slate-900 px-6 py-4 flex items-center justify-between shadow-md">
         <div className="flex items-center space-x-3">
           <div className="bg-emerald-600 text-white font-bold p-2 rounded-lg text-xs tracking-wider">GENESIS</div>
           <div>
-            <h1 className="text-base font-bold text-white tracking-tight">OMNI CORE v1.0.2 (Enterprise + PostgreSQL)</h1>
+            <h1 className="text-base font-bold text-white tracking-tight">OMNI CORE v1.0.3 (Enterprise UX)</h1>
             <p className="text-xs text-slate-400">Plataforma de Inteligencia y Auditoría Logística Persistente</p>
           </div>
         </div>
@@ -228,11 +249,8 @@ export default function Page() {
         {/* CONTENEDOR DE INGESTA */}
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg flex flex-wrap gap-4 items-center justify-between">
           <div className="flex items-center space-x-4 w-full md:w-auto">
-            <input
-              type="file" accept=".xlsx, .xls, .csv" ref={fileInputRef}
-              onChange={handleFileSelection}
-              className="text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-emerald-400 hover:file:bg-slate-700 cursor-pointer"
-            />
+            <input type="file" accept=".xlsx, .xls, .csv" ref={fileInputRef} onChange={handleFileSelection}
+              className="text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-emerald-400 hover:file:bg-slate-700 cursor-pointer" />
             <div className="flex items-center space-x-2">
               {!semanticData && (
                 <button onClick={handleSemanticCheck} disabled={isLoading || !file}
@@ -337,7 +355,7 @@ export default function Page() {
           </div>
         )}
 
-        {/* BANDEJA DE TAREAS PERSISTENTES EN POSTGRESQL */}
+        {/* BANDEJA DE TAREAS PERSISTENTES */}
         <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 shadow-lg space-y-4">
           <div className="flex justify-between items-center border-b border-slate-800 pb-3">
             <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wide flex items-center gap-2">
@@ -349,7 +367,7 @@ export default function Page() {
           </div>
 
           {persistentTasks.length === 0 ? (
-            <p className="text-xs text-slate-500 italic py-4 text-center">No hay tareas registradas en la base de datos. Ejecuta una auditoría para generar hallazgos.</p>
+            <p className="text-xs text-slate-500 italic py-4 text-center">No hay tareas registradas en la base de datos.</p>
           ) : (
             <div className="space-y-3">
               {persistentTasks.map((t) => (
@@ -370,7 +388,7 @@ export default function Page() {
                     <select
                       value={t.status}
                       onChange={(e) => handleUpdateTaskStatus(t.id, e.target.value)}
-                      className={`text-xs font-bold rounded-lg px-3 py-1.5 border ${
+                      className={`text-xs font-bold rounded-lg px-3 py-1.5 border transition-colors outline-none ${
                         t.status === 'RESUELTO' ? 'bg-emerald-950 text-emerald-300 border-emerald-800' :
                         t.status === 'EN_INVESTIGACION' ? 'bg-amber-950 text-amber-300 border-amber-800' :
                         'bg-rose-950 text-rose-300 border-rose-800'
