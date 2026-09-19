@@ -244,30 +244,86 @@ export default function Page() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const exportToCSV = () => {
+  // EXPORTADOR NATIVO A EXCEL CON FORMATO EJECUTIVO (HTML TABULAR .XLS)
+  const exportToExcel = () => {
     if (!genesisResults?.findings) return;
 
-    const headers = ['Prioridad', 'Titulo', 'Causa', 'Impacto_Directo', 'Departamento_Asignado', 'Accion_Requerida'];
-    const csvRows = genesisResults.findings.map(f => [
-      f.prioridad,
-      `"${(f.titulo || '').replace(/"/g, '""')}"`,
-      `"${(f.causa || '').replace(/"/g, '""')}"`,
-      f.impacto?.impacto_directo || 0,
-      `"${(f.accion?.departamento || '').replace(/"/g, '""')}"`,
-      `"${(f.accion?.accion || '').replace(/"/g, '""')}"`
-    ]);
+    let tableHtml = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <meta charset="UTF-8">
+        <!--[if gte mso 9]>
+        <xml>
+          <x:ExcelWorkbook>
+            <x:ExcelWorksheets>
+              <x:ExcelWorksheet>
+                <x:Name>Hallazgos de Auditoría</x:Name>
+                <x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>
+              </x:ExcelWorksheet>
+            </x:ExcelWorksheets>
+          </x:ExcelWorkbook>
+        </xml>
+        <![endif]-->
+        <style>
+          body { font-family: Arial, sans-serif; }
+          .header-title { font-size: 16px; font-weight: bold; color: #0f172a; margin-bottom: 5px; }
+          .header-sub { font-size: 11px; color: #475569; margin-bottom: 15px; }
+          table { border-collapse: collapse; width: 100%; }
+          th { background-color: #0f172a; color: #ffffff; font-weight: bold; padding: 10px; border: 1px solid #1e293b; text-align: left; font-size: 12px; }
+          td { padding: 8px; border: 1px solid #cbd5e1; font-size: 11px; color: #1e293b; }
+          .text-center { text-align: center; }
+          .text-right { text-align: right; }
+          .num-impact { color: #b91c1c; font-weight: bold; }
+          .dept-tag { color: #0369a1; font-weight: bold; }
+        </style>
+      </head>
+      <body>
+        <div class="header-title">GENESIS CORE B2B — REPORTE DE AUDITORÍA ECONÓMICA</div>
+        <div class="header-sub"><b>Fecha de Emisión:</b> ${new Date().toLocaleDateString('es-CO')} | <b>Calidad de Datos:</b> ${genesisResults.calidad_datos?.data_quality_score}% | <b>Confianza:</b> ${genesisResults.calidad_datos?.analytical_confidence}%</div>
+        <table>
+          <thead>
+            <tr>
+              <th width="80">Prioridad</th>
+              <th width="220">Título del Hallazgo</th>
+              <th width="320">Causa Raíz Detectada</th>
+              <th width="140">Masa Monetaria en Riesgo</th>
+              <th width="160">Departamento Asignado</th>
+              <th width="300">Acción Requerida</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
 
-    const csvContent = 'sep=;\n' + [headers.join(';'), ...csvRows.map(row => row.join(';'))].join('\n');
-    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    genesisResults.findings.forEach(f => {
+      tableHtml += `
+        <tr>
+          <td class="text-center"><b>#${f.prioridad}</b></td>
+          <td><b>${f.titulo || ''}</b></td>
+          <td>${f.causa || ''}</td>
+          <td class="text-right num-impact">$ ${new Intl.NumberFormat('es-CO').format(f.impacto?.impacto_directo || 0)}</td>
+          <td class="dept-tag">[${f.accion?.departamento || ''}]</td>
+          <td>${f.accion?.accion || ''}</td>
+        </tr>
+      `;
+    });
+
+    tableHtml += `
+          </tbody>
+        </table>
+      </body>
+      </html>
+    `;
+
+    const blob = new Blob([tableHtml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `GENESIS_Audit_Report_${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = `GENESIS_Reporte_Auditoria_${new Date().toISOString().split('T')[0]}.xls`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     
-    showToast("📊 Reporte exportado en formato Excel");
+    showToast("📊 Reporte de Excel exportado con éxito");
   };
 
   const formatMoney = (val) =>
@@ -389,8 +445,8 @@ export default function Page() {
                 <span className="bg-slate-950 border border-slate-800 px-3 py-1.5 rounded text-slate-300">
                   Confianza: <strong className="text-blue-400">{genesisResults.calidad_datos?.analytical_confidence}%</strong>
                 </span>
-                <button onClick={exportToCSV} className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 px-4 py-1.5 rounded-lg shadow-md transition-colors flex items-center gap-2 font-bold">
-                  ⬇️ Exportar CSV
+                <button onClick={exportToExcel} className="bg-emerald-700 hover:bg-emerald-600 text-white px-4 py-1.5 rounded-lg shadow-md transition-colors flex items-center gap-2 font-bold">
+                  📊 Exportar Excel
                 </button>
               </div>
             </div>
@@ -418,7 +474,7 @@ export default function Page() {
           </div>
         )}
 
-        {/* HISTORIAL DE AUDITORÍAS EJECUTADAS (POSTGRESQL) */}
+        {/* HISTORIAL DE AUDITORÍAS REGISTRADAS (POSTGRESQL) */}
         <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 shadow-lg space-y-4">
           <div className="flex justify-between items-center border-b border-slate-800 pb-3">
             <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wide flex items-center gap-2">
@@ -430,7 +486,7 @@ export default function Page() {
           </div>
 
           {auditHistory.length === 0 ? (
-            <p className="text-xs text-slate-500 italic py-4 text-center">No hay historial registrado.</p>
+            <p className="text-xs text-slate-500 italic py-4 text-center">No hay historial de auditorías registrado en PostgreSQL.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs text-slate-300">
