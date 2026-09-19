@@ -1,5 +1,3 @@
-// Cliente de la API de GENESIS. La clave de acceso viaja en la cabecera X-API-Key.
-// El servidor decide a qué empresa pertenece cada clave: el navegador nunca elige el "tenant".
 const BASE = (process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000').replace(/\/$/, '');
 
 export class ApiError extends Error {
@@ -93,13 +91,13 @@ export const api = {
 };
 ```[cite: 2, 27]
 
-4. Guarda el archivo con **`Ctrl` + `S`**[cite: 4].
+> Guarda el archivo con **`Ctrl` + `S`**[cite: 4].
 
 ---
 
-#### Paso 2: Verificar `src/app/lib/format.js`
+### 2. Para el archivo `src/app/lib/format.js`
 
-Asegúrate de que **`src/app/lib/format.js`** también tenga su contenido[cite: 2, 4, 26]:
+Abre `src/app/lib/format.js` en Codespaces, borra todo y pega **SOLO este bloque de código**[cite: 2, 4, 26]:
 
 ```javascript
 export const money = (v) =>
@@ -144,3 +142,20 @@ export const EVIDENCE_LABEL = {
 
 const MONEY_KEYS = ['ingreso', 'costo', 'perdida', 'diferencia', 'desviacion', 'mediana_segmento'];
 export const isMoneyKey = (k) => MONEY_KEYS.includes(k) || k.startsWith('valor_');
+```[cite: 2, 26]
+
+> Guarda el archivo con **`Ctrl` + `S`**[cite: 4].
+
+---
+
+### 3. Enviar a Vercel por la terminal
+
+Abre la terminal abajo en Codespaces y ejecuta estos 3 comandos[cite: 2, 4]:
+
+```bash
+git add .
+git commit -m "Fix: Add pure code to lib/api.js and format.js"
+git push
+```[cite: 2, 4]
+
+Al terminar el `push`, Vercel re-compilará automáticamente sin errores[cite: 2, 4].
