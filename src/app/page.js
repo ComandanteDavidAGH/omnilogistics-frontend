@@ -1,116 +1,99 @@
-const BASE = 'https://omnilogistics-backend-6bbn.onrender.com';
+'use client';
 
-export class ApiError extends Error {
-  constructor(message, { code, status, requestId } = {}) {
-    super(message);
-    this.code = code;
-    this.status = status;
-    this.requestId = requestId;
+import { useEffect, useState } from 'react';
+import { api } from './lib/api.js';
+
+import LoginGate from './components/LoginGate.jsx';
+import NewAudit from './components/NewAudit.jsx';
+import History from './components/History.jsx';
+import Tasks from './components/Tasks.jsx';
+import Settings from './components/Settings.jsx';
+
+const TABS = [
+  { id: 'new', label: 'Nueva auditoría' },
+  { id: 'history', label: 'Historial' },
+  { id: 'tasks', label: 'Tareas' },
+  { id: 'settings', label: 'Reglas de la empresa' },
+];
+const STORAGE_KEY = 'genesis_api_key';
+
+export default function Page() {
+  const [ready, setReady] = useState(false);
+  const [apiKey, setApiKey] = useState(null);
+  const [me, setMe] = useState(null);
+  const [tab, setTab] = useState('new');
+
+  useEffect(() => {
+    const saved = typeof window !== 'undefined' ? sessionStorage.getItem(STORAGE_KEY) : null;
+    if (!saved) {
+      setReady(true);
+      return;
+    }
+    api.me(saved)
+      .then((m) => {
+        setApiKey(saved);
+        setMe(m);
+      })
+      .catch(() => sessionStorage.removeItem(STORAGE_KEY))
+      .finally(() => setReady(true));
+  }, []);
+
+  function login(key, profile) {
+    sessionStorage.setItem(STORAGE_KEY, key);
+    setApiKey(key);
+    setMe(profile);
   }
+
+  function logout() {
+    sessionStorage.removeItem(STORAGE_KEY);
+    setApiKey(null);
+    setMe(null);
+    setTab('new');
+  }
+
+  if (!ready) return <div className="min-h-screen bg-slate-950" />;
+  if (!apiKey || !me) return <LoginGate onLogin={login} />;
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+      <header className="border-b border-slate-800 bg-slate-900 px-6 py-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="bg-emerald-600 text-white font-bold px-2.5 py-1.5 rounded-lg text-sm">GENESIS</div>
+          <div>
+            <h1 className="text-sm font-semibold">{me.name}</h1>
+            <p className="text-xs text-slate-400">Inteligencia económica para transporte · motor {me.engine_version}</p>
+          </div>
+        </div>
+        <button type="button" onClick={logout} className="text-sm text-slate-400 hover:text-slate-200 underline underline-offset-2">
+          Salir
+        </button>
+      </header>
+
+      <nav className="border-b border-slate-800 bg-slate-950 px-6" aria-label="Secciones">
+        <ul className="flex flex-wrap gap-1">
+          {TABS.map((t) => (
+            <li key={t.id}>
+              <button
+                type="button"
+                onClick={() => setTab(t.id)}
+                aria-current={tab === t.id ? 'page' : undefined}
+                className={`px-4 py-3 text-sm border-b-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${
+                  tab === t.id ? 'border-emerald-500 text-white font-medium' : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {t.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </nav>
+
+      <main className="flex-1 p-6 max-w-6xl w-full mx-auto">
+        {tab === 'new' && <NewAudit apiKey={apiKey} />}
+        {tab === 'history' && <History apiKey={apiKey} />}
+        {tab === 'tasks' && <Tasks apiKey={apiKey} />}
+        {tab === 'settings' && <Settings apiKey={apiKey} me={me} onSaved={(config) => setMe({ ...me, config })} />}
+      </main>
+    </div>
+  );
 }
-
-async function request(path, { method = 'GET', apiKey, json, form, raw = false, timeoutMs = 120000 } = {}) {
-  const headers = {
-    'x-tenant-id': apiKey || 'DEFAULT_TENANT',
-  };
-  if (apiKey) headers['X-API-Key'] = apiKey;
-
-  let body;
-  if (json !== undefined) {
-    headers['Content-Type'] = 'application/json';
-    body = JSON.stringify(json);
-  } else if (form) {
-    body = form;
-  }
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  let res;
-  try {
-    res = await fetch(`${BASE}${path}`, { method, headers, body, signal: controller.signal });
-  } catch (e) {
-    const timedOut = e && e.name === 'AbortError';
-    throw new ApiError(
-      timedOut
-        ? 'El análisis tardó demasiado.'
-        : 'No se pudo conectar con el servidor backend.',
-      { code: timedOut ? 'TIMEOUT' : 'RED' }
-    );
-  } finally {
-    clearTimeout(timer);
-  }
-
-  if (!res.ok) {
-    let info = {};
-    try {
-      info = (await res.json()).error || {};
-    } catch {
-      /* no json */
-    }
-    throw new ApiError(info.message || `Error ${res.status}`, {
-      code: info.code,
-      status: res.status,
-      requestId: info.request_id,
-    });
-  }
-  return raw ? res : res.json();
-}
-
-export const api = {
-  // Ahora valida tu clave sk_admin_...
-  me: async (apiKey) => {
-    if (!apiKey || !apiKey.trim().startsWith('sk_')) {
-      throw new ApiError('API Key no válida. Debe iniciar con sk_');
-    }
-    try {
-      await request('/health', { apiKey });
-    } catch {
-      // Ignora si Render no tiene el endpoint /health configurado
-    }
-    return {
-      name: 'OmniLogistics Enterprise',
-      engine_version: '1.0',
-      config: {}
-    };
-  },
-
-  updateConfig: (apiKey, config) => Promise.resolve({ ok: true }),
-
-  understand: (apiKey, file) => {
-    const form = new FormData();
-    form.append('file', file);
-    return request('/api/v1/data-understanding', { method: 'POST', apiKey, form });
-  },
-
-  createAudit: (apiKey, file, mapping) => {
-    const form = new FormData();
-    form.append('file', file);
-    form.append('mapping', JSON.stringify(mapping));
-    return request('/api/procesar-matriz', { method: 'POST', apiKey, form });
-  },
-
-  listAudits: async (apiKey) => {
-    try {
-      return await request('/api/v1/audit-records', { apiKey });
-    } catch {
-      return [];
-    }
-  },
-
-  getAudit: (apiKey, id) => request(`/api/v1/audit-records/${id}`, { apiKey }),
-  deleteAudit: (apiKey, id) => request(`/api/v1/audit-records/${id}`, { method: 'DELETE', apiKey }),
-
-  listTasks: async (apiKey) => {
-    try {
-      return await request('/api/v1/action-tasks', { apiKey });
-    } catch {
-      return [];
-    }
-  },
-
-  updateTask: (apiKey, id, patch) => request(`/api/v1/action-tasks/${id}`, { method: 'PATCH', apiKey, json: patch }),
-
-  async downloadAudit(apiKey, id) {
-    return true;
-  },
-};
