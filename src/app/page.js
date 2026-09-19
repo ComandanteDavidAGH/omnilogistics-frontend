@@ -1,60 +1,153 @@
 'use client';
 import { useState, useRef } from 'react';
 
+const CANONICAL_LABELS = {
+  "TRIP_ID": "ID de Viaje / Folio",
+  "TRIP_DATE": "Fecha del Viaje",
+  "DISTANCE_KM": "Distancia (Km)",
+  "VEHICLE_ID": "Vehículo / Placa",
+  "DRIVER_ID": "Conductor",
+  "ROUTE_NAME": "Ruta / Trayecto",
+  "CUSTOMER_NAME": "Cliente",
+  "REVENUE": "Ingreso / Flete Facturado",
+  "COST_FUEL": "Costo de Combustible",
+  "COST_TOLL": "Costo de Peajes",
+  "COST_MAINT": "Costo de Mantenimiento",
+  "COST_DRIVER": "Costo de Conductor / Viáticos",
+  "COST_OTHER": "Otros Costos Directos",
+  "COST_TOTAL": "Costo Total Operacional",
+  "VOLUME_LTS": "Volumen Combustible (Lts)",
+  "VOLUME_GAL": "Volumen Combustible (Gal)",
+  "UNKNOWN": "Ignorar Campo"
+};
+
+function ChecklistBar({ steps }) {
+  const doneCount = steps.filter(s => s.done).length;
+  const currentIndex = steps.findIndex(s => !s.done);
+
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-xs font-bold text-slate-300 uppercase tracking-wide">GENESIS CONTROL CHECKLIST</span>
+        <span className="text-[11px] text-slate-500">{doneCount}/{steps.length} Pasos Completados</span>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {steps.map((step, idx) => {
+          const isCurrent = idx === currentIndex;
+          const isDone = step.done;
+          return (
+            <div
+              key={step.id}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors
+                ${isDone ? 'bg-emerald-950/30 border-emerald-800/50 text-emerald-400' :
+                  isCurrent ? 'bg-blue-950/30 border-blue-800/50 text-blue-300' :
+                  'bg-slate-950 border-slate-800 text-slate-500'}`}
+            >
+              <span>{isDone ? '✅' : isCurrent ? '🔵' : '⚪'}</span>
+              <span>{step.label}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function Page() {
   const [file, setFile] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState(null);
   const [semanticData, setSemanticData] = useState(null);
+  const [manualResolutions, setManualResolutions] = useState({});
   const [genesisResults, setGenesisResults] = useState(null);
-  
+
   const fileInputRef = useRef(null);
-  const BACKEND_URL_BASE = "https://omnilogistics-backend-6bbn.onrender.com";
+  const BACKEND_URL_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "https://omnilogistics-backend-6bbn.onrender.com";
 
   const handleFileSelection = (e) => {
     setFile(e.target.files[0]);
     setGenesisResults(null);
     setSemanticData(null);
+    setManualResolutions({});
+    setErrorMsg(null);
   };
 
-  // 🧠 FASE 1: DATA UNDERSTANDING
   const handleSemanticCheck = async () => {
     if (!file) return;
     setIsLoading(true);
-    
+    setErrorMsg(null);
     const formData = new FormData();
     formData.append("file", file);
 
     try {
       const response = await fetch(`${BACKEND_URL_BASE}/api/v1/data-understanding`, { method: "POST", body: formData });
-      if (!response.ok) throw new Error("El servidor rechazó la lectura semántica");
-      
       const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Error en escaneo semántico");
       setSemanticData(data);
     } catch (error) {
       console.error("Error semántico:", error);
-      alert("❌ Fallo en FASE 1:\n" + error.message);
+      setErrorMsg(error.message);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // 💸 FASE 2: CÁLCULO ECONÓMICO (Legacy)
+  const getAllAmbiguities = () => {
+    let all = [];
+    if (semanticData?.sheets_analysis) {
+      Object.entries(semanticData.sheets_analysis).forEach(([sheetName, sheet]) => {
+        (sheet.ambiguities || []).forEach(amb => {
+          all.push({ ...amb, sheetName, resolutionKey: `${sheetName}::${amb.original_column}` });
+        });
+      });
+    }
+    return all;
+  };
+
+  const allAmbiguities = getAllAmbiguities();
+  const pendingAmbiguities = allAmbiguities.filter(amb => amb.requires_decision && !manualResolutions[amb.resolutionKey]);
+
+  const handleResolveAmbiguity = (resolutionKey, canonicalValue) => {
+    setManualResolutions(prev => ({ ...prev, [resolutionKey]: canonicalValue }));
+  };
+
+  const buildFinalMapping = () => {
+    const mapping = {};
+    if (semanticData?.sheets_analysis) {
+      Object.entries(semanticData.sheets_analysis).forEach(([sheetName, sheet]) => {
+        mapping[sheetName] = mapping[sheetName] || {};
+        Object.entries(sheet.fields_mapping || {}).forEach(([col, data]) => {
+          mapping[sheetName][col] = data.canonical;
+        });
+      });
+    }
+    Object.entries(manualResolutions).forEach(([key, canonical]) => {
+      const [sheetName, col] = key.split("::");
+      if (canonical && canonical !== "UNKNOWN") {
+        mapping[sheetName] = mapping[sheetName] || {};
+        mapping[sheetName][col] = canonical;
+      }
+    });
+    return mapping;
+  };
+
   const handleFullAudit = async () => {
-    if (!file) return;
+    if (!file || !semanticData) return;
     setIsLoading(true);
-    
+    setErrorMsg(null);
+
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("mapping", JSON.stringify(buildFinalMapping()));
 
     try {
       const response = await fetch(`${BACKEND_URL_BASE}/api/procesar-matriz`, { method: "POST", body: formData });
-      if (!response.ok) throw new Error("El servidor rechazó el cálculo");
-      
       const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Error al procesar matriz económica");
       setGenesisResults(data);
     } catch (error) {
       console.error("Error cálculo:", error);
-      alert("❌ Fallo en FASE 2:\n" + error.message);
+      setErrorMsg(error.message);
     } finally {
       setIsLoading(false);
     }
@@ -64,10 +157,26 @@ export default function Page() {
     setFile(null);
     setGenesisResults(null);
     setSemanticData(null);
-    if (fileInputRef.current) { fileInputRef.current.value = ''; }
+    setManualResolutions({});
+    setErrorMsg(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const formatMoney = (val) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val || 0);
+  const formatMoney = (val) =>
+    val === null || val === undefined
+      ? 'N/D'
+      : new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(val);
+
+  const steps = [
+    { id: 'upload', label: '1. Ingesta', done: !!file },
+    { id: 'analyze', label: '2. Entendimiento', done: !!semanticData },
+    { id: 'resolve', label: '3. Mapeo Canónico', done: !!semanticData && pendingAmbiguities.length === 0 },
+    { id: 'calculate', label: '4. Motor Económico', done: !!genesisResults },
+    { id: 'review', label: '5. Plan de Acción', done: !!genesisResults },
+  ];
+
+  const financials = genesisResults?.financials;
+  const findings = genesisResults?.findings || [];
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
@@ -75,102 +184,87 @@ export default function Page() {
         <div className="flex items-center space-x-3">
           <div className="bg-emerald-600 text-white font-bold p-2 rounded-lg text-xs tracking-wider">GENESIS</div>
           <div>
-            <h1 className="text-base font-bold text-white tracking-tight">OMNI CORE v0.4 (Enterprise)</h1>
-            <p className="text-xs text-slate-400">Motor de Inteligencia & Data Quality</p>
+            <h1 className="text-base font-bold text-white tracking-tight">OMNI CORE v1.0.0 (Enterprise)</h1>
+            <p className="text-xs text-slate-400">Plataforma de Inteligencia y Auditoría Logística</p>
           </div>
         </div>
       </header>
 
       <main className="flex-1 p-6 max-w-5xl w-full mx-auto space-y-6">
-        
-        {/* PANEL DE INGESTA */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
-          <div className="flex flex-wrap gap-4 items-center justify-between">
-            <div className="flex items-center space-x-4 w-full md:w-auto">
-              <input 
-                type="file" 
-                accept=".xlsx, .xls, .csv"
-                ref={fileInputRef} 
-                onChange={handleFileSelection}
-                className="text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-emerald-400 hover:file:bg-slate-700 cursor-pointer"
-              />
-              
-              <div className="flex items-center space-x-2">
-                {!semanticData && (
-                  <button 
-                    onClick={handleSemanticCheck}
-                    disabled={isLoading || !file}
-                    className="bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white text-xs font-bold px-5 py-2 rounded-lg transition-colors shadow-md"
-                  >
-                    {isLoading ? 'Analizando Semántica...' : 'Paso 1: Comprensión de Datos'}
-                  </button>
-                )}
 
-                {semanticData && !genesisResults && (
-                  <button 
-                    onClick={handleFullAudit}
-                    disabled={isLoading || semanticData?.ambiguities?.length > 0}
-                    className={`${semanticData?.ambiguities?.length > 0 ? 'bg-slate-700 text-slate-400' : 'bg-emerald-600 hover:bg-emerald-500'} text-xs font-bold px-5 py-2 rounded-lg transition-colors shadow-md text-white`}
-                  >
-                    {isLoading ? 'Calculando...' : 'Paso 2: Calcular Impacto Económico'}
-                  </button>
-                )}
+        <ChecklistBar steps={steps} />
 
-                {(genesisResults || semanticData || file) && (
-                  <button onClick={handleClear} className="bg-slate-800 hover:bg-rose-900/80 text-slate-300 border border-slate-700 text-xs font-medium px-4 py-2 rounded-lg transition-colors">
-                    ✕ Limpiar
-                  </button>
-                )}
-              </div>
+        {/* CONTENEDOR DE INGESTA */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg flex flex-wrap gap-4 items-center justify-between">
+          <div className="flex items-center space-x-4 w-full md:w-auto">
+            <input
+              type="file" accept=".xlsx, .xls, .csv" ref={fileInputRef}
+              onChange={handleFileSelection}
+              className="text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-emerald-400 hover:file:bg-slate-700 cursor-pointer"
+            />
+            <div className="flex items-center space-x-2">
+              {!semanticData && (
+                <button onClick={handleSemanticCheck} disabled={isLoading || !file}
+                  className="bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white text-xs font-bold px-5 py-2 rounded-lg shadow-md">
+                  {isLoading ? 'Escaneando...' : 'Escanear Archivo'}
+                </button>
+              )}
+              {semanticData && !genesisResults && (
+                <button onClick={handleFullAudit} disabled={isLoading || pendingAmbiguities.length > 0}
+                  className={`${pendingAmbiguities.length > 0 ? 'bg-slate-700 text-slate-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-500'} text-xs font-bold px-5 py-2 rounded-lg shadow-md text-white`}>
+                  {isLoading ? 'Auditando...' : 'Ejecutar Auditoría Económica'}
+                </button>
+              )}
+              {(genesisResults || semanticData || file) && (
+                <button onClick={handleClear} className="bg-slate-800 hover:bg-rose-900/80 text-slate-300 border border-slate-700 text-xs font-medium px-4 py-2 rounded-lg">✕ Limpiar</button>
+              )}
             </div>
           </div>
+          {errorMsg && <div className="text-rose-400 text-xs font-medium">❌ {errorMsg}</div>}
         </div>
 
-        {/* 🧠 CHECKPOINT: RESULTADOS SEMÁNTICOS */}
+        {/* PASO 2 Y 3: DATA UNDERSTANDING */}
         {semanticData && !genesisResults && (
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg animate-fade-in">
-            <div className="border-b border-slate-800 pb-4 mb-4 flex justify-between items-center">
-              <div>
-                <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">🧠 Checkpoint: Comprensión Semántica</h3>
-                <p className="text-xs text-slate-400">GENESIS analizó {semanticData.dataset?.columns} columnas y mapeó los tipos de datos.</p>
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg space-y-6">
+            <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wide">🧠 Estructura y Entidades Detectadas</h3>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-slate-950 p-4 rounded-lg border border-slate-800">
+              <div><p className="text-[10px] text-slate-500 uppercase">Hojas Detectadas</p><p className="text-xl font-mono text-slate-200">{semanticData.sheets_detected}</p></div>
+              <div><p className="text-[10px] text-slate-500 uppercase">Total Registros</p><p className="text-xl font-mono text-slate-200">{semanticData.total_records?.toLocaleString('es-CO')}</p></div>
+              <div className="col-span-2">
+                <p className="text-[10px] text-slate-500 uppercase mb-1">Entidades Identificadas</p>
+                <div className="flex gap-2 flex-wrap">
+                  {semanticData.global_entities?.map(ent => (
+                    <span key={ent} className="bg-emerald-950 text-emerald-400 border border-emerald-800/50 px-2 py-0.5 rounded text-xs font-bold">{ent}</span>
+                  ))}
+                </div>
               </div>
             </div>
 
-            {/* Mapeos Exitosos */}
-            <div className="mb-6">
-              <h4 className="text-xs uppercase font-bold text-slate-500 mb-3">Mapeo de Alta Confianza</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                {Object.entries(semanticData.fields_mapping || {}).map(([col, data], idx) => (
-                  <div key={idx} className="bg-emerald-950/20 border border-emerald-900/30 p-3 rounded-lg">
-                    <p className="text-[10px] text-slate-400 mb-1">Columna original: <span className="text-slate-300 font-bold">{col}</span></p>
-                    <p className="text-sm font-mono text-emerald-400 font-bold">{data.canonical}</p>
-                    <div className="flex justify-between items-center mt-2">
-                      <span className="text-[9px] bg-slate-950 px-2 py-0.5 rounded text-slate-500 border border-slate-800 uppercase">{data.detected_type}</span>
-                      <span className="text-[10px] text-emerald-500">{data.confidence * 100}% Confianza</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Ambigüedades / Guardarraíl */}
-            {semanticData.ambiguities && semanticData.ambiguities.length > 0 && (
-              <div className="bg-rose-950/20 border border-rose-900/50 p-4 rounded-lg">
-                <h4 className="text-sm font-bold text-rose-400 mb-2 flex items-center gap-2">⚠️ Acción Requerida: Ambigüedad Detectada</h4>
-                <p className="text-xs text-slate-400 mb-4">El motor no pudo clasificar las siguientes columnas con suficiente confianza por cruce de tipos de datos o nombres imprecisos. Valida antes de calcular economía.</p>
-                
+            {/* RESOLUCIÓN DE AMBIGÜEDADES */}
+            {allAmbiguities.length > 0 && (
+              <div className="bg-slate-950 border border-slate-800 p-4 rounded-lg space-y-3">
+                <h4 className="text-xs font-bold text-slate-300 uppercase">Confirmación Manual de Campos</h4>
                 <div className="space-y-2">
-                  {semanticData.ambiguities.map((amb, idx) => (
-                    <div key={idx} className="bg-slate-950 p-3 rounded flex justify-between items-center border border-slate-800">
+                  {allAmbiguities.map((amb, idx) => (
+                    <div key={idx} className="p-3 rounded-lg flex flex-wrap gap-3 justify-between items-center bg-slate-900 border border-slate-800">
                       <div>
+                        <span className="text-[10px] text-slate-500 uppercase mr-2">[{amb.sheetName}]</span>
                         <span className="text-xs font-bold text-slate-200">{amb.original_column}</span>
-                        <span className="text-[10px] text-slate-500 ml-2 uppercase">({amb.detected_type})</span>
+                        {amb.sample_values?.length > 0 && (
+                          <span className="text-[11px] text-slate-500 ml-2">Muestra: ({amb.sample_values.join(', ')})</span>
+                        )}
                       </div>
-                      <div className="text-right">
-                        <span className="text-[10px] text-slate-400">Posible match: </span>
-                        <span className="text-xs font-mono text-amber-500 font-bold">{amb.possible_match}</span>
-                        <span className="text-[10px] text-rose-500 ml-3">({Math.round(amb.confidence * 100)}%)</span>
-                      </div>
+                      <select
+                        value={manualResolutions[amb.resolutionKey] || (amb.possible_match !== "UNKNOWN" ? amb.possible_match : "")}
+                        onChange={(e) => handleResolveAmbiguity(amb.resolutionKey, e.target.value)}
+                        className="bg-slate-950 border border-slate-700 text-xs text-slate-200 rounded-lg px-3 py-1.5 w-64"
+                      >
+                        <option value="" disabled>Seleccionar campo canónico...</option>
+                        {Object.entries(CANONICAL_LABELS).map(([id, label]) => (
+                          <option key={id} value={id}>{label}</option>
+                        ))}
+                      </select>
                     </div>
                   ))}
                 </div>
@@ -179,19 +273,115 @@ export default function Page() {
           </div>
         )}
 
-        {/* 💸 RESULTADOS DE GENESIS (Legacy - solo se muestra tras pasar FASE 2) */}
+        {/* PASO 4 Y 5: RESULTADOS DE AUDITORÍA */}
         {genesisResults && (
-           <div className="bg-slate-900 p-6 rounded-xl border border-emerald-900/30 text-center animate-fade-in shadow-lg">
-              <span className="text-4xl mb-3 block">✅</span>
-              <h3 className="text-lg font-bold text-slate-100 mb-2">Auditoría Financiera Ejecutada</h3>
-              <p className="text-sm text-slate-400 mb-4">GENESIS calculó un ingreso operativo de {formatMoney(genesisResults.analisis.totalIngresos)} y detectó {genesisResults.analisis.totalHallazgos} hallazgos.</p>
-              
-              <div className="grid grid-cols-3 gap-4 mt-6">
-                 <div className="bg-slate-950 p-4 rounded border border-slate-800"><p className="text-[10px] uppercase text-slate-500">Ingreso Operativo</p><p className="text-xl font-mono text-emerald-400">{formatMoney(genesisResults.analisis.totalIngresos)}</p></div>
-                 <div className="bg-slate-950 p-4 rounded border border-slate-800"><p className="text-[10px] uppercase text-slate-500">Margen Global</p><p className="text-xl font-mono text-blue-400">{genesisResults.analisis.margenGlobal}%</p></div>
-                 <div className="bg-rose-950/20 p-4 rounded border border-rose-900/30"><p className="text-[10px] uppercase text-rose-500">Exposición</p><p className="text-xl font-mono text-rose-400">{formatMoney(genesisResults.analisis.dineroEnRiesgo)}</p></div>
+          <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 shadow-lg space-y-6">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-4">
+              <h3 className="text-base font-bold text-slate-100 uppercase tracking-wide">📊 Resumen de Auditoría Económica</h3>
+              <div className="flex gap-3 text-xs">
+                <span className="bg-slate-950 border border-slate-800 px-3 py-1 rounded text-slate-300">
+                  Calidad de Datos: <strong className="text-emerald-400">{genesisResults.calidad_datos?.data_quality_score}%</strong>
+                </span>
+                <span className="bg-slate-950 border border-slate-800 px-3 py-1 rounded text-slate-300">
+                  Confianza Analítica: <strong className="text-blue-400">{genesisResults.calidad_datos?.analytical_confidence}%</strong>
+                </span>
               </div>
-           </div>
+            </div>
+
+            {/* ADVERTENCIAS RELACIONALES Y DE LECTURA */}
+            {genesisResults.advertencias?.length > 0 && (
+              <div className="bg-amber-950/20 border border-amber-900/40 text-amber-300 text-xs px-4 py-3 rounded-lg space-y-1">
+                <p className="font-bold border-b border-amber-900/40 pb-1 mb-1">⚠️ Observaciones del Procesamiento y Cruce:</p>
+                {genesisResults.advertencias.map((w, i) => <p key={i}>• {w}</p>)}
+              </div>
+            )}
+
+            {/* TARJETAS FINANCIERAS */}
+            {financials && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-slate-950 p-4 rounded-lg border border-slate-800">
+                  <p className="text-[10px] uppercase text-slate-500">Ingreso Operativo Neto</p>
+                  <p className="text-xl font-mono text-emerald-400 font-bold">{formatMoney(financials.totalIngresos)}</p>
+                </div>
+                <div className="bg-slate-950 p-4 rounded-lg border border-slate-800">
+                  <p className="text-[10px] uppercase text-slate-500">Costo Operacional</p>
+                  <p className="text-xl font-mono text-slate-300 font-bold">{formatMoney(financials.totalCostos)}</p>
+                </div>
+                <div className="bg-slate-950 p-4 rounded-lg border border-slate-800">
+                  <p className="text-[10px] uppercase text-slate-500">Margen Global</p>
+                  <p className="text-xl font-mono text-blue-400 font-bold">{financials.margenGlobal !== null ? `${financials.margenGlobal}%` : 'N/D'}</p>
+                </div>
+                <div className="bg-rose-950/20 p-4 rounded-lg border border-rose-900/30">
+                  <p className="text-[10px] uppercase text-rose-500">Masa Monetaria en Riesgo</p>
+                  <p className="text-xl font-mono text-rose-400 font-bold">{formatMoney(financials.dineroEnRiesgo)}</p>
+                </div>
+              </div>
+            )}
+
+            {/* PREVIEW DEL JOIN VISTA PREVIA */}
+            {genesisResults.preview_join?.length > 0 && (
+              <div>
+                <h4 className="text-xs uppercase font-bold text-slate-400 mb-2">🔍 Matriz Unificada (Primeras 5 Filas)</h4>
+                <div className="overflow-x-auto bg-slate-950 rounded-lg border border-slate-800 p-2">
+                  <table className="w-full text-[11px] text-left text-slate-300">
+                    <thead className="bg-slate-900 text-slate-400 uppercase text-[9px]">
+                      <tr>
+                        {Object.keys(genesisResults.preview_join[0]).map(k => (
+                          <th key={k} className="p-2 border-b border-slate-800">{k}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {genesisResults.preview_join.map((row, i) => (
+                        <tr key={i} className="border-b border-slate-900 hover:bg-slate-900/50">
+                          {Object.values(row).map((v, j) => (
+                            <td key={j} className="p-2 font-mono">{String(v ?? '')}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* LISTA DE HALLAZGOS Y PLAN DE ACCIÓN */}
+            {findings.length > 0 && (
+              <div className="space-y-3">
+                <h4 className="text-xs uppercase font-bold text-slate-400">🚨 Hallazgos Detectados ({findings.length})</h4>
+                {findings.map((h, idx) => (
+                  <div key={idx} className="bg-slate-950 border border-slate-800 rounded-lg p-4 space-y-3">
+                    <div className="flex justify-between items-start">
+                      <div className="flex items-center gap-2">
+                        <span className="bg-slate-900 text-slate-300 text-xs px-2 py-0.5 rounded font-mono font-bold">#{h.prioridad}</span>
+                        <span className="text-xs font-bold text-slate-200">{h.titulo}</span>
+                      </div>
+                      <span className="text-xs font-mono text-rose-400 font-bold">{formatMoney(h.impacto?.impacto_directo)}</span>
+                    </div>
+
+                    <p className="text-xs text-slate-400">{h.causa}</p>
+
+                    {/* METADATOS DE EVIDENCIA */}
+                    {h.evidencia && (
+                      <div className="bg-slate-900 p-2 rounded text-[11px] text-slate-400 flex flex-wrap gap-4 border border-slate-800">
+                        <span>Segmento: <strong className="text-slate-200">{h.evidencia.segmento_analizado}</strong></span>
+                        <span>Rigor: <strong className="text-emerald-400">{h.evidencia.nivel_evidencia}</strong></span>
+                        <span>Muestra: <strong className="text-slate-200">{h.evidencia.registros_afectados} de {h.evidencia.registros_poblacion}</strong></span>
+                      </div>
+                    )}
+
+                    {/* ACCIÓN RECOMENDADA */}
+                    {h.accion && (
+                      <div className="text-xs text-emerald-400 flex items-center justify-between pt-1 border-t border-slate-900">
+                        <span>➔ <strong>[{h.accion.departamento}]</strong> {h.accion.accion}</span>
+                        <span className="text-[10px] uppercase px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-300 font-bold">{h.accion.urgencia}</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </main>
     </div>
