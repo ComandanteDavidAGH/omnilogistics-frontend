@@ -1,5 +1,5 @@
 'use client';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 const CANONICAL_LABELS = {
   "TRIP_ID": "ID de Viaje / Folio",
@@ -60,9 +60,27 @@ export default function Page() {
   const [semanticData, setSemanticData] = useState(null);
   const [manualResolutions, setManualResolutions] = useState({});
   const [genesisResults, setGenesisResults] = useState(null);
+  const [persistentTasks, setPersistentTasks] = useState([]);
 
   const fileInputRef = useRef(null);
   const BACKEND_URL_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "https://omnilogistics-backend-6bbn.onrender.com";
+
+  // Cargar tareas guardadas en PostgreSQL al iniciar
+  const fetchTasks = async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL_BASE}/api/v1/action-tasks`);
+      if (res.ok) {
+        const data = await res.json();
+        setPersistentTasks(data);
+      }
+    } catch (e) {
+      console.error("Error cargando tareas de PostgreSQL:", e);
+    }
+  };
+
+  useEffect(() => {
+    fetchTasks();
+  }, []);
 
   const handleFileSelection = (e) => {
     setFile(e.target.files[0]);
@@ -145,11 +163,27 @@ export default function Page() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Error al procesar matriz económica");
       setGenesisResults(data);
+      await fetchTasks(); // Actualizar la lista de tareas guardadas
     } catch (error) {
       console.error("Error cálculo:", error);
       setErrorMsg(error.message);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleUpdateTaskStatus = async (taskId, newStatus) => {
+    try {
+      const res = await fetch(`${BACKEND_URL_BASE}/api/v1/action-tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ new_status: newStatus })
+      });
+      if (res.ok) {
+        fetchTasks();
+      }
+    } catch (e) {
+      console.error("Error actualizando tarea:", e);
     }
   };
 
@@ -172,11 +206,8 @@ export default function Page() {
     { id: 'analyze', label: '2. Entendimiento', done: !!semanticData },
     { id: 'resolve', label: '3. Mapeo Canónico', done: !!semanticData && pendingAmbiguities.length === 0 },
     { id: 'calculate', label: '4. Motor Económico', done: !!genesisResults },
-    { id: 'review', label: '5. Plan de Acción', done: !!genesisResults },
+    { id: 'review', label: '5. Plan de Acción', done: persistentTasks.length > 0 },
   ];
-
-  const financials = genesisResults?.financials;
-  const findings = genesisResults?.findings || [];
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
@@ -184,8 +215,8 @@ export default function Page() {
         <div className="flex items-center space-x-3">
           <div className="bg-emerald-600 text-white font-bold p-2 rounded-lg text-xs tracking-wider">GENESIS</div>
           <div>
-            <h1 className="text-base font-bold text-white tracking-tight">OMNI CORE v1.0.0 (Enterprise)</h1>
-            <p className="text-xs text-slate-400">Plataforma de Inteligencia y Auditoría Logística</p>
+            <h1 className="text-base font-bold text-white tracking-tight">OMNI CORE v1.0.2 (Enterprise + PostgreSQL)</h1>
+            <p className="text-xs text-slate-400">Plataforma de Inteligencia y Auditoría Logística Persistente</p>
           </div>
         </div>
       </header>
@@ -223,11 +254,10 @@ export default function Page() {
           {errorMsg && <div className="text-rose-400 text-xs font-medium">❌ {errorMsg}</div>}
         </div>
 
-        {/* PASO 2 Y 3: DATA UNDERSTANDING */}
+        {/* DATA UNDERSTANDING */}
         {semanticData && !genesisResults && (
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg space-y-6">
             <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wide">🧠 Estructura y Entidades Detectadas</h3>
-
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-slate-950 p-4 rounded-lg border border-slate-800">
               <div><p className="text-[10px] text-slate-500 uppercase">Hojas Detectadas</p><p className="text-xl font-mono text-slate-200">{semanticData.sheets_detected}</p></div>
               <div><p className="text-[10px] text-slate-500 uppercase">Total Registros</p><p className="text-xl font-mono text-slate-200">{semanticData.total_records?.toLocaleString('es-CO')}</p></div>
@@ -241,7 +271,6 @@ export default function Page() {
               </div>
             </div>
 
-            {/* RESOLUCIÓN DE AMBIGÜEDADES */}
             {allAmbiguities.length > 0 && (
               <div className="bg-slate-950 border border-slate-800 p-4 rounded-lg space-y-3">
                 <h4 className="text-xs font-bold text-slate-300 uppercase">Confirmación Manual de Campos</h4>
@@ -251,9 +280,6 @@ export default function Page() {
                       <div>
                         <span className="text-[10px] text-slate-500 uppercase mr-2">[{amb.sheetName}]</span>
                         <span className="text-xs font-bold text-slate-200">{amb.original_column}</span>
-                        {amb.sample_values?.length > 0 && (
-                          <span className="text-[11px] text-slate-500 ml-2">Muestra: ({amb.sample_values.join(', ')})</span>
-                        )}
                       </div>
                       <select
                         value={manualResolutions[amb.resolutionKey] || (amb.possible_match !== "UNKNOWN" ? amb.possible_match : "")}
@@ -273,7 +299,7 @@ export default function Page() {
           </div>
         )}
 
-        {/* PASO 4 Y 5: RESULTADOS DE AUDITORÍA */}
+        {/* RESULTADOS DE AUDITORÍA */}
         {genesisResults && (
           <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 shadow-lg space-y-6">
             <div className="flex justify-between items-center border-b border-slate-800 pb-4">
@@ -288,101 +314,79 @@ export default function Page() {
               </div>
             </div>
 
-            {/* ADVERTENCIAS RELACIONALES Y DE LECTURA */}
-            {genesisResults.advertencias?.length > 0 && (
-              <div className="bg-amber-950/20 border border-amber-900/40 text-amber-300 text-xs px-4 py-3 rounded-lg space-y-1">
-                <p className="font-bold border-b border-amber-900/40 pb-1 mb-1">⚠️ Observaciones del Procesamiento y Cruce:</p>
-                {genesisResults.advertencias.map((w, i) => <p key={i}>• {w}</p>)}
-              </div>
-            )}
-
-            {/* TARJETAS FINANCIERAS */}
-            {financials && (
+            {genesisResults.financials && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="bg-slate-950 p-4 rounded-lg border border-slate-800">
                   <p className="text-[10px] uppercase text-slate-500">Ingreso Operativo Neto</p>
-                  <p className="text-xl font-mono text-emerald-400 font-bold">{formatMoney(financials.totalIngresos)}</p>
+                  <p className="text-xl font-mono text-emerald-400 font-bold">{formatMoney(genesisResults.financials.totalIngresos)}</p>
                 </div>
                 <div className="bg-slate-950 p-4 rounded-lg border border-slate-800">
                   <p className="text-[10px] uppercase text-slate-500">Costo Operacional</p>
-                  <p className="text-xl font-mono text-slate-300 font-bold">{formatMoney(financials.totalCostos)}</p>
+                  <p className="text-xl font-mono text-slate-300 font-bold">{formatMoney(genesisResults.financials.totalCostos)}</p>
                 </div>
                 <div className="bg-slate-950 p-4 rounded-lg border border-slate-800">
                   <p className="text-[10px] uppercase text-slate-500">Margen Global</p>
-                  <p className="text-xl font-mono text-blue-400 font-bold">{financials.margenGlobal !== null ? `${financials.margenGlobal}%` : 'N/D'}</p>
+                  <p className="text-xl font-mono text-blue-400 font-bold">{genesisResults.financials.margenGlobal !== null ? `${genesisResults.financials.margenGlobal}%` : 'N/D'}</p>
                 </div>
                 <div className="bg-rose-950/20 p-4 rounded-lg border border-rose-900/30">
                   <p className="text-[10px] uppercase text-rose-500">Masa Monetaria en Riesgo</p>
-                  <p className="text-xl font-mono text-rose-400 font-bold">{formatMoney(financials.dineroEnRiesgo)}</p>
+                  <p className="text-xl font-mono text-rose-400 font-bold">{formatMoney(genesisResults.financials.dineroEnRiesgo)}</p>
                 </div>
-              </div>
-            )}
-
-            {/* PREVIEW DEL JOIN VISTA PREVIA */}
-            {genesisResults.preview_join?.length > 0 && (
-              <div>
-                <h4 className="text-xs uppercase font-bold text-slate-400 mb-2">🔍 Matriz Unificada (Primeras 5 Filas)</h4>
-                <div className="overflow-x-auto bg-slate-950 rounded-lg border border-slate-800 p-2">
-                  <table className="w-full text-[11px] text-left text-slate-300">
-                    <thead className="bg-slate-900 text-slate-400 uppercase text-[9px]">
-                      <tr>
-                        {Object.keys(genesisResults.preview_join[0]).map(k => (
-                          <th key={k} className="p-2 border-b border-slate-800">{k}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {genesisResults.preview_join.map((row, i) => (
-                        <tr key={i} className="border-b border-slate-900 hover:bg-slate-900/50">
-                          {Object.values(row).map((v, j) => (
-                            <td key={j} className="p-2 font-mono">{String(v ?? '')}</td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* LISTA DE HALLAZGOS Y PLAN DE ACCIÓN */}
-            {findings.length > 0 && (
-              <div className="space-y-3">
-                <h4 className="text-xs uppercase font-bold text-slate-400">🚨 Hallazgos Detectados ({findings.length})</h4>
-                {findings.map((h, idx) => (
-                  <div key={idx} className="bg-slate-950 border border-slate-800 rounded-lg p-4 space-y-3">
-                    <div className="flex justify-between items-start">
-                      <div className="flex items-center gap-2">
-                        <span className="bg-slate-900 text-slate-300 text-xs px-2 py-0.5 rounded font-mono font-bold">#{h.prioridad}</span>
-                        <span className="text-xs font-bold text-slate-200">{h.titulo}</span>
-                      </div>
-                      <span className="text-xs font-mono text-rose-400 font-bold">{formatMoney(h.impacto?.impacto_directo)}</span>
-                    </div>
-
-                    <p className="text-xs text-slate-400">{h.causa}</p>
-
-                    {/* METADATOS DE EVIDENCIA */}
-                    {h.evidencia && (
-                      <div className="bg-slate-900 p-2 rounded text-[11px] text-slate-400 flex flex-wrap gap-4 border border-slate-800">
-                        <span>Segmento: <strong className="text-slate-200">{h.evidencia.segmento_analizado}</strong></span>
-                        <span>Rigor: <strong className="text-emerald-400">{h.evidencia.nivel_evidencia}</strong></span>
-                        <span>Muestra: <strong className="text-slate-200">{h.evidencia.registros_afectados} de {h.evidencia.registros_poblacion}</strong></span>
-                      </div>
-                    )}
-
-                    {/* ACCIÓN RECOMENDADA */}
-                    {h.accion && (
-                      <div className="text-xs text-emerald-400 flex items-center justify-between pt-1 border-t border-slate-900">
-                        <span>➔ <strong>[{h.accion.departamento}]</strong> {h.accion.accion}</span>
-                        <span className="text-[10px] uppercase px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-300 font-bold">{h.accion.urgencia}</span>
-                      </div>
-                    )}
-                  </div>
-                ))}
               </div>
             )}
           </div>
         )}
+
+        {/* BANDEJA DE TAREAS PERSISTENTES EN POSTGRESQL */}
+        <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 shadow-lg space-y-4">
+          <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+            <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wide flex items-center gap-2">
+              <span>🗄️</span> BANDEJA DE ACCIÓN OPERATIVA (PostgreSQL)
+            </h3>
+            <span className="bg-emerald-950 text-emerald-400 text-xs px-2.5 py-1 rounded-full border border-emerald-800 font-bold">
+              {persistentTasks.length} Tareas Persistidas
+            </span>
+          </div>
+
+          {persistentTasks.length === 0 ? (
+            <p className="text-xs text-slate-500 italic py-4 text-center">No hay tareas registradas en la base de datos. Ejecuta una auditoría para generar hallazgos.</p>
+          ) : (
+            <div className="space-y-3">
+              {persistentTasks.map((t) => (
+                <div key={t.id} className="bg-slate-950 border border-slate-800 rounded-lg p-4 flex flex-wrap justify-between items-center gap-4">
+                  <div className="space-y-1 max-w-xl">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold uppercase bg-blue-950 text-blue-400 px-2 py-0.5 rounded border border-blue-800/50">
+                        Task #{t.id}
+                      </span>
+                      <span className="text-xs font-bold text-slate-200">{t.title}</span>
+                      <span className="text-xs text-emerald-400 font-mono font-bold">[{t.department}]</span>
+                    </div>
+                    <p className="text-xs text-slate-400">{t.description}</p>
+                    <p className="text-[10px] text-slate-500">Impacto: {formatMoney(t.financial_impact)} | Creado: {new Date(t.created_at).toLocaleString('es-CO')}</p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={t.status}
+                      onChange={(e) => handleUpdateTaskStatus(t.id, e.target.value)}
+                      className={`text-xs font-bold rounded-lg px-3 py-1.5 border ${
+                        t.status === 'RESUELTO' ? 'bg-emerald-950 text-emerald-300 border-emerald-800' :
+                        t.status === 'EN_INVESTIGACION' ? 'bg-amber-950 text-amber-300 border-amber-800' :
+                        'bg-rose-950 text-rose-300 border-rose-800'
+                      }`}
+                    >
+                      <option value="PENDIENTE">PENDIENTE</option>
+                      <option value="EN_INVESTIGACION">EN INVESTIGACIÓN</option>
+                      <option value="RESUELTO">RESUELTO</option>
+                    </select>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
       </main>
     </div>
   );
