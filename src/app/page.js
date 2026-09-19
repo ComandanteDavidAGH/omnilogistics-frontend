@@ -1,11 +1,18 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { api } from './lib/api.js';
-import LoginGate from './components/LoginGate.jsx';
-import NewAudit from './components/NewAudit.jsx';
-import History from './components/History.jsx';
-import Tasks from './components/Tasks.jsx';
-import Settings from './components/Settings.jsx';
+
+import * as LoginGateMod from './components/LoginGate.jsx';
+import * as NewAuditMod from './components/NewAudit.jsx';
+import * as HistoryMod from './components/History.jsx';
+import * as TasksMod from './components/Tasks.jsx';
+import * as SettingsMod from './components/Settings.jsx';
+
+const LoginGate = LoginGateMod.default || LoginGateMod.LoginGate || LoginGateMod;
+const NewAudit = NewAuditMod.default || NewAuditMod.NewAudit || NewAuditMod;
+const History = HistoryMod.default || HistoryMod.History || HistoryMod;
+const Tasks = TasksMod.default || TasksMod.Tasks || TasksMod;
+const Settings = SettingsMod.default || SettingsMod.Settings || SettingsMod;
 
 const TABS = [
   { id: 'new', label: 'Nueva auditoría' },
