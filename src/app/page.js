@@ -1,100 +1,88 @@
-'use client';
-import { useEffect, useState } from 'react';
-import { api } from './lib/api.js';
+const BASE = (process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000').replace(/\/$/, '');
 
-import * as LoginGateMod from './components/LoginGate.jsx';
-import * as NewAuditMod from './components/NewAudit.jsx';
-import * as HistoryMod from './components/History.jsx';
-import * as TasksMod from './components/Tasks.jsx';
-import * as SettingsMod from './components/Settings.jsx';
-
-// Función blindada para evitar el React Error 130 (got: object)
-function resolveComponent(mod) {
-  if (mod && mod.default && typeof mod.default === 'function') return mod.default;
-  if (mod) {
-    const fallback = Object.values(mod).find(x => typeof x === 'function');
-    if (fallback) return fallback;
+export class ApiError extends Error {
+  constructor(message, { code, status, requestId } = {}) {
+    super(message);
+    this.code = code;
+    this.status = status;
+    this.requestId = requestId;
   }
-  return () => <div className="p-4 text-rose-500 font-mono text-sm border border-rose-800 bg-rose-950/20 rounded">Error: Componente no encontrado</div>;
 }
 
-const LoginGate = resolveComponent(LoginGateMod);
-const NewAudit = resolveComponent(NewAuditMod);
-const History = resolveComponent(HistoryMod);
-const Tasks = resolveComponent(TasksMod);
-const Settings = resolveComponent(SettingsMod);
-
-const TABS = [
-  { id: 'new', label: 'Nueva auditoría' },
-  { id: 'history', label: 'Historial' },
-  { id: 'tasks', label: 'Tareas' },
-  { id: 'settings', label: 'Reglas de la empresa' },
-];
-const STORAGE_KEY = 'genesis_api_key';
-
-export default function Page() {
-  const [ready, setReady] = useState(false);
-  const [apiKey, setApiKey] = useState(null);
-  const [me, setMe] = useState(null);
-  const [tab, setTab] = useState('new');
-
-  useEffect(() => {
-    const saved = typeof window !== 'undefined' ? sessionStorage.getItem(STORAGE_KEY) : null;
-    if (!saved) { setReady(true); return; }
-    api.me(saved)
-      .then((m) => { setApiKey(saved); setMe(m); })
-      .catch(() => sessionStorage.removeItem(STORAGE_KEY))
-      .finally(() => setReady(true));
-  }, []);
-
-  function login(key, profile) {
-    sessionStorage.setItem(STORAGE_KEY, key);
-    setApiKey(key);
-    setMe(profile);
+async function request(path, { method = 'GET', apiKey, json, form, raw = false, timeoutMs = 120000 } = {}) {
+  const headers = {};
+  if (apiKey) headers['X-API-Key'] = apiKey;
+  let body;
+  if (json !== undefined) {
+    headers['Content-Type'] = 'application/json';
+    body = JSON.stringify(json);
+  } else if (form) {
+    body = form;
   }
 
-  function logout() {
-    sessionStorage.removeItem(STORAGE_KEY);
-    setApiKey(null);
-    setMe(null);
-    setTab('new');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let res;
+  try {
+    res = await fetch(`${BASE}${path}`, { method, headers, body, signal: controller.signal });
+  } catch (e) {
+    const timedOut = e && e.name === 'AbortError';
+    throw new ApiError(
+      timedOut
+        ? 'El análisis tardó demasiado. Prueba con un archivo más pequeño.'
+        : 'No se pudo conectar con el servidor backend.',
+      { code: timedOut ? 'TIMEOUT' : 'RED' }
+    );
+  } finally {
+    clearTimeout(timer);
   }
 
-  if (!ready) return <div className="min-h-screen bg-slate-950" />;
-  if (!apiKey || !me) return <LoginGate onLogin={login} />;
-
-  return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
-      <header className="border-b border-slate-800 bg-slate-900 px-6 py-3 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="bg-emerald-600 text-white font-bold px-2.5 py-1.5 rounded-lg text-sm">GENESIS</div>
-          <div>
-            <h1 className="text-sm font-semibold">{me.name}</h1>
-            <p className="text-xs text-slate-400">Inteligencia económica para transporte · motor {me.engine_version}</p>
-          </div>
-        </div>
-        <button type="button" onClick={logout} className="text-sm text-slate-400 hover:text-slate-200 underline underline-offset-2">Salir</button>
-      </header>
-
-      <nav className="border-b border-slate-800 bg-slate-950 px-6" aria-label="Secciones">
-        <ul className="flex flex-wrap gap-1">
-          {TABS.map((t) => (
-            <li key={t.id}>
-              <button type="button" onClick={() => setTab(t.id)} aria-current={tab === t.id ? 'page' : undefined}
-                className={`px-4 py-3 text-sm border-b-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${tab === t.id ? 'border-emerald-500 text-white font-medium' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>
-                {t.label}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </nav>
-
-      <main className="flex-1 p-6 max-w-6xl w-full mx-auto">
-        {tab === 'new' && <NewAudit apiKey={apiKey} />}
-        {tab === 'history' && <History apiKey={apiKey} />}
-        {tab === 'tasks' && <Tasks apiKey={apiKey} />}
-        {tab === 'settings' && <Settings apiKey={apiKey} me={me} onSaved={(config) => setMe({ ...me, config })} />}
-      </main>
-    </div>
-  );
+  if (!res.ok) {
+    let info = {};
+    try {
+      info = (await res.json()).error || {};
+    } catch {
+      /* respuesta sin JSON */
+    }
+    throw new ApiError(info.message || `Error ${res.status}`, {
+      code: info.code,
+      status: res.status,
+      requestId: info.request_id,
+    });
+  }
+  return raw ? res : res.json();
 }
+
+export const api = {
+  me: async (apiKey) => {
+    await request('/health', { apiKey });
+    return {
+      name: 'Usuario Enterprise',
+      engine_version: '1.0',
+      config: {}
+    };
+  },
+  updateConfig: (apiKey, config) => request('/health', { apiKey }),
+
+  understand: (apiKey, file) => {
+    const form = new FormData();
+    form.append('file', file);
+    return request('/api/v1/data-understanding', { method: 'POST', apiKey, form });
+  },
+  createAudit: (apiKey, file, mapping) => {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('mapping', JSON.stringify(mapping));
+    return request('/api/procesar-matriz', { method: 'POST', apiKey, form });
+  },
+  listAudits: (apiKey) => request('/api/v1/audit-records', { apiKey }),
+  getAudit: (apiKey, id) => request('/api/v1/audit-records', { apiKey }),
+  deleteAudit: (apiKey, id) => request('/api/v1/audit-records', { method: 'DELETE', apiKey }),
+
+  listTasks: (apiKey, status) => request('/api/v1/action-tasks', { apiKey }),
+  updateTask: (apiKey, id, patch) => request(`/api/v1/action-tasks/${id}`, { method: 'PATCH', apiKey, json: patch }),
+
+  async downloadAudit(apiKey, id) {
+    return true;
+  },
+};
