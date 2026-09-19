@@ -208,31 +208,30 @@ export default function Page() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // NUEVA FUNCIÓN: Exportar hallazgos a CSV (Excel)
+  // FUNCIÓN DE EXPORTACIÓN CORREGIDA PARA EXCEL EN ESPAÑOL
   const exportToCSV = () => {
     if (!genesisResults?.findings) return;
 
-    // 1. Preparar las cabeceras
+    // Cabecera canónica
     const headers = ['Prioridad', 'Titulo', 'Causa', 'Impacto_Directo', 'Departamento_Asignado', 'Accion_Requerida'];
     
-    // 2. Mapear los datos de las anomalías
+    // Mapear los datos delimitando por punto y coma (;)
     const csvRows = genesisResults.findings.map(f => [
       f.prioridad,
-      `"${f.titulo}"`, // Comillas para evitar problemas con comas en el texto
-      `"${f.causa}"`,
+      `"${(f.titulo || '').replace(/"/g, '""')}"`,
+      `"${(f.causa || '').replace(/"/g, '""')}"`,
       f.impacto?.impacto_directo || 0,
-      `"${f.accion?.departamento || ''}"`,
-      `"${f.accion?.accion || ''}"`
+      `"${(f.accion?.departamento || '').replace(/"/g, '""')}"`,
+      `"${(f.accion?.accion || '').replace(/"/g, '""')}"`
     ]);
 
-    // 3. Unir cabeceras y datos
-    const csvContent = [
-      headers.join(','),
-      ...csvRows.map(row => row.join(','))
+    // Directiva sep=; le indica a Excel qué separador usar explícitamente
+    const csvContent = 'sep=;\n' + [
+      headers.join(';'),
+      ...csvRows.map(row => row.join(';'))
     ].join('\n');
 
-    // 4. Crear el archivo descargable
-    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' }); // \uFEFF fuerza UTF-8 en Excel
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -241,7 +240,7 @@ export default function Page() {
     link.click();
     document.body.removeChild(link);
     
-    showToast("📊 Reporte descargado exitosamente");
+    showToast("📊 Reporte exportado en formato Excel");
   };
 
   const formatMoney = (val) =>
