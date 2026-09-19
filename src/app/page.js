@@ -62,13 +62,13 @@ export default function Page() {
   const [genesisResults, setGenesisResults] = useState(null);
   const [persistentTasks, setPersistentTasks] = useState([]);
   
-  // NUEVO ESTADO: Alertas Flotantes (Toasts)
+  // ESTADO: Alertas Flotantes (Toasts)
   const [toast, setToast] = useState(null);
 
   const fileInputRef = useRef(null);
   const BACKEND_URL_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "https://omnilogistics-backend-6bbn.onrender.com";
 
-  // Función para mostrar notificaciones temporalmente (3 segundos)
+  // Función para mostrar notificaciones temporalmente (3.5 segundos)
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3500);
@@ -189,7 +189,6 @@ export default function Page() {
       });
       if (res.ok) {
         fetchTasks();
-        // Disparador visual inmediato del éxito en base de datos
         showToast(`💾 Estado guardado en PostgreSQL: ${newStatus.replace('_', ' ')}`);
       } else {
         showToast("❌ Error al guardar en base de datos", "error");
@@ -207,6 +206,42 @@ export default function Page() {
     setManualResolutions({});
     setErrorMsg(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // NUEVA FUNCIÓN: Exportar hallazgos a CSV (Excel)
+  const exportToCSV = () => {
+    if (!genesisResults?.findings) return;
+
+    // 1. Preparar las cabeceras
+    const headers = ['Prioridad', 'Titulo', 'Causa', 'Impacto_Directo', 'Departamento_Asignado', 'Accion_Requerida'];
+    
+    // 2. Mapear los datos de las anomalías
+    const csvRows = genesisResults.findings.map(f => [
+      f.prioridad,
+      `"${f.titulo}"`, // Comillas para evitar problemas con comas en el texto
+      `"${f.causa}"`,
+      f.impacto?.impacto_directo || 0,
+      `"${f.accion?.departamento || ''}"`,
+      `"${f.accion?.accion || ''}"`
+    ]);
+
+    // 3. Unir cabeceras y datos
+    const csvContent = [
+      headers.join(','),
+      ...csvRows.map(row => row.join(','))
+    ].join('\n');
+
+    // 4. Crear el archivo descargable
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' }); // \uFEFF fuerza UTF-8 en Excel
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `GENESIS_Audit_Report_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    showToast("📊 Reporte descargado exitosamente");
   };
 
   const formatMoney = (val) =>
@@ -236,7 +271,7 @@ export default function Page() {
         <div className="flex items-center space-x-3">
           <div className="bg-emerald-600 text-white font-bold p-2 rounded-lg text-xs tracking-wider">GENESIS</div>
           <div>
-            <h1 className="text-base font-bold text-white tracking-tight">OMNI CORE v1.0.3 (Enterprise UX)</h1>
+            <h1 className="text-base font-bold text-white tracking-tight">OMNI CORE v1.0.3 (Enterprise UX & Export)</h1>
             <p className="text-xs text-slate-400">Plataforma de Inteligencia y Auditoría Logística Persistente</p>
           </div>
         </div>
@@ -320,15 +355,20 @@ export default function Page() {
         {/* RESULTADOS DE AUDITORÍA */}
         {genesisResults && (
           <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 shadow-lg space-y-6">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-4">
+            <div className="flex flex-wrap justify-between items-center border-b border-slate-800 pb-4 gap-4">
               <h3 className="text-base font-bold text-slate-100 uppercase tracking-wide">📊 Resumen de Auditoría Económica</h3>
-              <div className="flex gap-3 text-xs">
-                <span className="bg-slate-950 border border-slate-800 px-3 py-1 rounded text-slate-300">
-                  Calidad de Datos: <strong className="text-emerald-400">{genesisResults.calidad_datos?.data_quality_score}%</strong>
+              <div className="flex gap-3 text-xs items-center">
+                <span className="bg-slate-950 border border-slate-800 px-3 py-1.5 rounded text-slate-300">
+                  Calidad: <strong className="text-emerald-400">{genesisResults.calidad_datos?.data_quality_score}%</strong>
                 </span>
-                <span className="bg-slate-950 border border-slate-800 px-3 py-1 rounded text-slate-300">
-                  Confianza Analítica: <strong className="text-blue-400">{genesisResults.calidad_datos?.analytical_confidence}%</strong>
+                <span className="bg-slate-950 border border-slate-800 px-3 py-1.5 rounded text-slate-300">
+                  Confianza: <strong className="text-blue-400">{genesisResults.calidad_datos?.analytical_confidence}%</strong>
                 </span>
+                
+                {/* BOTÓN DE EXPORTACIÓN */}
+                <button onClick={exportToCSV} className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 px-4 py-1.5 rounded-lg shadow-md transition-colors flex items-center gap-2 font-bold">
+                  ⬇️ Exportar CSV
+                </button>
               </div>
             </div>
 
@@ -388,7 +428,7 @@ export default function Page() {
                     <select
                       value={t.status}
                       onChange={(e) => handleUpdateTaskStatus(t.id, e.target.value)}
-                      className={`text-xs font-bold rounded-lg px-3 py-1.5 border transition-colors outline-none ${
+                      className={`text-xs font-bold rounded-lg px-3 py-1.5 border transition-colors outline-none cursor-pointer ${
                         t.status === 'RESUELTO' ? 'bg-emerald-950 text-emerald-300 border-emerald-800' :
                         t.status === 'EN_INVESTIGACION' ? 'bg-amber-950 text-amber-300 border-amber-800' :
                         'bg-rose-950 text-rose-300 border-rose-800'
