@@ -36,14 +36,14 @@ export default function LoginGate({ onLogin }) {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label htmlFor="apiKeyInput" className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-              API Key (gk_...)
+              API Key (sk_...)
             </label>
             <input
               id="apiKeyInput"
               type="password"
               value={key}
               onChange={(e) => setKey(e.target.value)}
-              placeholder="gk_live_..."
+              placeholder="sk_admin_genesis_..."
               required
               className="w-full px-4 py-3 bg-slate-950 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors font-mono text-sm"
             />

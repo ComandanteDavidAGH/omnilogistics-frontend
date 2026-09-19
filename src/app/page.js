@@ -57,15 +57,15 @@ async function request(path, { method = 'GET', apiKey, json, form, raw = false, 
 }
 
 export const api = {
-  // Validacion de API Key con formato gk_... sin depender de endpoints inexistentes
+  // Ahora valida tu clave sk_admin_...
   me: async (apiKey) => {
-    if (!apiKey || !apiKey.trim().startsWith('gk_')) {
-      throw new ApiError('API Key no válida. Debe iniciar con el prefijo gk_');
+    if (!apiKey || !apiKey.trim().startsWith('sk_')) {
+      throw new ApiError('API Key no válida. Debe iniciar con sk_');
     }
     try {
       await request('/health', { apiKey });
     } catch {
-      // Si /health responde 404 u otro estado, no se bloquea el acceso
+      // Ignora si Render no tiene el endpoint /health configurado
     }
     return {
       name: 'OmniLogistics Enterprise',
