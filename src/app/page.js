@@ -8,11 +8,21 @@ import * as HistoryMod from './components/History.jsx';
 import * as TasksMod from './components/Tasks.jsx';
 import * as SettingsMod from './components/Settings.jsx';
 
-const LoginGate = LoginGateMod.default || LoginGateMod.LoginGate || LoginGateMod;
-const NewAudit = NewAuditMod.default || NewAuditMod.NewAudit || NewAuditMod;
-const History = HistoryMod.default || HistoryMod.History || HistoryMod;
-const Tasks = TasksMod.default || TasksMod.Tasks || TasksMod;
-const Settings = SettingsMod.default || SettingsMod.Settings || SettingsMod;
+// Función blindada para evitar el React Error 130 (got: object)
+function resolveComponent(mod) {
+  if (mod && mod.default && typeof mod.default === 'function') return mod.default;
+  if (mod) {
+    const fallback = Object.values(mod).find(x => typeof x === 'function');
+    if (fallback) return fallback;
+  }
+  return () => <div className="p-4 text-rose-500 font-mono text-sm border border-rose-800 bg-rose-950/20 rounded">Error: Componente no encontrado</div>;
+}
+
+const LoginGate = resolveComponent(LoginGateMod);
+const NewAudit = resolveComponent(NewAuditMod);
+const History = resolveComponent(HistoryMod);
+const Tasks = resolveComponent(TasksMod);
+const Settings = resolveComponent(SettingsMod);
 
 const TABS = [
   { id: 'new', label: 'Nueva auditoría' },
