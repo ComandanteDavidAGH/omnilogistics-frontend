@@ -3,17 +3,11 @@
 import { useEffect, useState } from 'react';
 import { api } from './lib/api.js';
 
-import * as LoginGateMod from './components/LoginGate.jsx';
-import * as NewAuditMod from './components/NewAudit.jsx';
-import * as HistoryMod from './components/History.jsx';
-import * as TasksMod from './components/Tasks.jsx';
-import * as SettingsMod from './components/Settings.jsx';
-
-const LoginGate = LoginGateMod.default || LoginGateMod.LoginGate || (() => null);
-const NewAudit = NewAuditMod.default || NewAuditMod.NewAudit || (() => null);
-const History = HistoryMod.default || HistoryMod.History || (() => null);
-const Tasks = TasksMod.default || TasksMod.Tasks || (() => null);
-const Settings = SettingsMod.default || SettingsMod.Settings || (() => null);
+import LoginGate from './components/LoginGate.jsx';
+import NewAudit from './components/NewAudit.jsx';
+import History from './components/History.jsx';
+import Tasks from './components/Tasks.jsx';
+import Settings from './components/Settings.jsx';
 
 const TABS = [
   { id: 'new', label: 'Nueva auditoría' },
@@ -23,7 +17,7 @@ const TABS = [
 ];
 const STORAGE_KEY = 'genesis_api_key';
 
-function Page() {
+export default function Page() {
   const [ready, setReady] = useState(false);
   const [apiKey, setApiKey] = useState(null);
   const [me, setMe] = useState(null);
@@ -103,5 +97,3 @@ function Page() {
     </div>
   );
 }
-
-export default Page;
