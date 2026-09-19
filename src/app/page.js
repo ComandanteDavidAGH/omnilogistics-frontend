@@ -61,6 +61,7 @@ export default function Page() {
   const [manualResolutions, setManualResolutions] = useState({});
   const [genesisResults, setGenesisResults] = useState(null);
   const [persistentTasks, setPersistentTasks] = useState([]);
+  const [auditHistory, setAuditHistory] = useState([]);
   const [toast, setToast] = useState(null);
 
   const fileInputRef = useRef(null);
@@ -83,8 +84,21 @@ export default function Page() {
     }
   };
 
+  const fetchHistory = async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL_BASE}/api/v1/audit-records`);
+      if (res.ok) {
+        const data = await res.json();
+        setAuditHistory(data);
+      }
+    } catch (e) {
+      console.error("Error cargando historial:", e);
+    }
+  };
+
   useEffect(() => {
     fetchTasks();
+    fetchHistory();
   }, []);
 
   const handleFileSelection = (e) => {
@@ -169,7 +183,8 @@ export default function Page() {
       if (!response.ok) throw new Error(data.detail || "Error al procesar");
       setGenesisResults(data);
       await fetchTasks();
-      showToast("💾 Auditoría completada y guardada en base de datos");
+      await fetchHistory();
+      showToast("💾 Auditoría completada y registrada");
     } catch (error) {
       setErrorMsg(error.message);
     } finally {
@@ -186,7 +201,7 @@ export default function Page() {
       });
       if (res.ok) {
         fetchTasks();
-        showToast(`💾 Estado guardado en PostgreSQL: ${newStatus.replace('_', ' ')}`);
+        showToast(`💾 Estado guardado: ${newStatus.replace('_', ' ')}`);
       } else {
         showToast("❌ Error al guardar en base de datos", "error");
       }
@@ -195,28 +210,22 @@ export default function Page() {
     }
   };
 
-  // ACCIÓN DE BORRADO INDIVIDUAL
   const handleDeleteTask = async (taskId) => {
     try {
-      const res = await fetch(`${BACKEND_URL_BASE}/api/v1/action-tasks/${taskId}`, {
-        method: "DELETE"
-      });
+      const res = await fetch(`${BACKEND_URL_BASE}/api/v1/action-tasks/${taskId}`, { method: "DELETE" });
       if (res.ok) {
         fetchTasks();
-        showToast(`🗑️ Tarea #${taskId} eliminada de PostgreSQL`);
+        showToast(`🗑️ Tarea #${taskId} eliminada`);
       }
     } catch (e) {
       showToast("❌ Error al eliminar tarea", "error");
     }
   };
 
-  // ACCIÓN DE PURGA COMPLETA
   const handleClearAllTasks = async () => {
-    if (!confirm("¿Está seguro de eliminar todas las tareas guardadas en la base de datos?")) return;
+    if (!confirm("¿Está seguro de eliminar todas las tareas guardadas?")) return;
     try {
-      const res = await fetch(`${BACKEND_URL_BASE}/api/v1/action-tasks`, {
-        method: "DELETE"
-      });
+      const res = await fetch(`${BACKEND_URL_BASE}/api/v1/action-tasks`, { method: "DELETE" });
       if (res.ok) {
         fetchTasks();
         showToast("🧹 Bandeja purgada por completo");
@@ -239,7 +248,6 @@ export default function Page() {
     if (!genesisResults?.findings) return;
 
     const headers = ['Prioridad', 'Titulo', 'Causa', 'Impacto_Directo', 'Departamento_Asignado', 'Accion_Requerida'];
-    
     const csvRows = genesisResults.findings.map(f => [
       f.prioridad,
       `"${(f.titulo || '').replace(/"/g, '""')}"`,
@@ -249,11 +257,7 @@ export default function Page() {
       `"${(f.accion?.accion || '').replace(/"/g, '""')}"`
     ]);
 
-    const csvContent = 'sep=;\n' + [
-      headers.join(';'),
-      ...csvRows.map(row => row.join(';'))
-    ].join('\n');
-
+    const csvContent = 'sep=;\n' + [headers.join(';'), ...csvRows.map(row => row.join(';'))].join('\n');
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -292,7 +296,7 @@ export default function Page() {
         <div className="flex items-center space-x-3">
           <div className="bg-emerald-600 text-white font-bold p-2 rounded-lg text-xs tracking-wider">GENESIS</div>
           <div>
-            <h1 className="text-base font-bold text-white tracking-tight">OMNI CORE v1.0.3 (Enterprise UX & Export)</h1>
+            <h1 className="text-base font-bold text-white tracking-tight">OMNI CORE v1.0.4 (Enterprise Dashboard)</h1>
             <p className="text-xs text-slate-400">Plataforma de Inteligencia y Auditoría Logística Persistente</p>
           </div>
         </div>
@@ -373,7 +377,7 @@ export default function Page() {
           </div>
         )}
 
-        {/* RESULTADOS DE AUDITORÍA */}
+        {/* RESULTADOS DE AUDITORÍA ACTUAL */}
         {genesisResults && (
           <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 shadow-lg space-y-6">
             <div className="flex flex-wrap justify-between items-center border-b border-slate-800 pb-4 gap-4">
@@ -413,6 +417,51 @@ export default function Page() {
             )}
           </div>
         )}
+
+        {/* HISTORIAL DE AUDITORÍAS EJECUTADAS (POSTGRESQL) */}
+        <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 shadow-lg space-y-4">
+          <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+            <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wide flex items-center gap-2">
+              <span>📈</span> HISTORIAL DE AUDITORÍAS REGISTRADAS
+            </h3>
+            <span className="bg-blue-950 text-blue-400 text-xs px-2.5 py-1 rounded-full border border-blue-800 font-bold">
+              {auditHistory.length} Registros
+            </span>
+          </div>
+
+          {auditHistory.length === 0 ? (
+            <p className="text-xs text-slate-500 italic py-4 text-center">No hay historial registrado.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-300">
+                <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] border-b border-slate-800">
+                  <tr>
+                    <th className="p-3">ID</th>
+                    <th className="p-3">Archivo</th>
+                    <th className="p-3">Fecha</th>
+                    <th className="p-3">Calidad</th>
+                    <th className="p-3">Ingresos Total</th>
+                    <th className="p-3">Dinero en Riesgo</th>
+                    <th className="p-3">Anomalías</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800">
+                  {auditHistory.map((rec) => (
+                    <tr key={rec.id} className="hover:bg-slate-800/50 transition-colors">
+                      <td className="p-3 font-mono text-slate-500">#{rec.id}</td>
+                      <td className="p-3 font-bold text-slate-200">{rec.filename}</td>
+                      <td className="p-3 text-slate-400">{new Date(rec.timestamp).toLocaleString('es-CO')}</td>
+                      <td className="p-3"><span className="text-emerald-400 font-bold">{rec.quality_score}%</span></td>
+                      <td className="p-3 font-mono text-emerald-400">{formatMoney(rec.financial_results?.totalIngresos)}</td>
+                      <td className="p-3 font-mono text-rose-400">{formatMoney(rec.financial_results?.dineroEnRiesgo)}</td>
+                      <td className="p-3 font-bold">{rec.anomalies_count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
 
         {/* BANDEJA DE TAREAS PERSISTENTES */}
         <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 shadow-lg space-y-4">
@@ -465,7 +514,6 @@ export default function Page() {
                       <option value="RESUELTO">RESUELTO</option>
                     </select>
 
-                    {/* BOTÓN DE BORRADO INDIVIDUAL */}
                     <button
                       onClick={() => handleDeleteTask(t.id)}
                       className="bg-slate-900 hover:bg-rose-950 text-slate-400 hover:text-rose-300 border border-slate-800 hover:border-rose-800 p-1.5 rounded-lg transition-colors text-xs"
