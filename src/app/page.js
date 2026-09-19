@@ -61,14 +61,11 @@ export default function Page() {
   const [manualResolutions, setManualResolutions] = useState({});
   const [genesisResults, setGenesisResults] = useState(null);
   const [persistentTasks, setPersistentTasks] = useState([]);
-  
-  // ESTADO: Alertas Flotantes (Toasts)
   const [toast, setToast] = useState(null);
 
   const fileInputRef = useRef(null);
   const BACKEND_URL_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "https://omnilogistics-backend-6bbn.onrender.com";
 
-  // Función para mostrar notificaciones temporalmente (3.5 segundos)
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3500);
@@ -194,8 +191,38 @@ export default function Page() {
         showToast("❌ Error al guardar en base de datos", "error");
       }
     } catch (e) {
-      console.error("Error:", e);
       showToast("❌ Error de conexión", "error");
+    }
+  };
+
+  // ACCIÓN DE BORRADO INDIVIDUAL
+  const handleDeleteTask = async (taskId) => {
+    try {
+      const res = await fetch(`${BACKEND_URL_BASE}/api/v1/action-tasks/${taskId}`, {
+        method: "DELETE"
+      });
+      if (res.ok) {
+        fetchTasks();
+        showToast(`🗑️ Tarea #${taskId} eliminada de PostgreSQL`);
+      }
+    } catch (e) {
+      showToast("❌ Error al eliminar tarea", "error");
+    }
+  };
+
+  // ACCIÓN DE PURGA COMPLETA
+  const handleClearAllTasks = async () => {
+    if (!confirm("¿Está seguro de eliminar todas las tareas guardadas en la base de datos?")) return;
+    try {
+      const res = await fetch(`${BACKEND_URL_BASE}/api/v1/action-tasks`, {
+        method: "DELETE"
+      });
+      if (res.ok) {
+        fetchTasks();
+        showToast("🧹 Bandeja purgada por completo");
+      }
+    } catch (e) {
+      showToast("❌ Error al purgar tareas", "error");
     }
   };
 
@@ -208,14 +235,11 @@ export default function Page() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // FUNCIÓN DE EXPORTACIÓN CORREGIDA PARA EXCEL EN ESPAÑOL
   const exportToCSV = () => {
     if (!genesisResults?.findings) return;
 
-    // Cabecera canónica
     const headers = ['Prioridad', 'Titulo', 'Causa', 'Impacto_Directo', 'Departamento_Asignado', 'Accion_Requerida'];
     
-    // Mapear los datos delimitando por punto y coma (;)
     const csvRows = genesisResults.findings.map(f => [
       f.prioridad,
       `"${(f.titulo || '').replace(/"/g, '""')}"`,
@@ -225,7 +249,6 @@ export default function Page() {
       `"${(f.accion?.accion || '').replace(/"/g, '""')}"`
     ]);
 
-    // Directiva sep=; le indica a Excel qué separador usar explícitamente
     const csvContent = 'sep=;\n' + [
       headers.join(';'),
       ...csvRows.map(row => row.join(';'))
@@ -257,7 +280,6 @@ export default function Page() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
       
-      {/* COMPONENTE TOAST (Notificación Flotante) */}
       {toast && (
         <div className={`fixed bottom-6 right-6 px-6 py-4 rounded-xl shadow-2xl font-bold text-sm z-50 flex items-center gap-3 transition-all duration-300 border
           ${toast.type === 'error' ? 'bg-rose-950 text-rose-300 border-rose-800' : 'bg-emerald-950 text-emerald-300 border-emerald-800'}
@@ -363,8 +385,6 @@ export default function Page() {
                 <span className="bg-slate-950 border border-slate-800 px-3 py-1.5 rounded text-slate-300">
                   Confianza: <strong className="text-blue-400">{genesisResults.calidad_datos?.analytical_confidence}%</strong>
                 </span>
-                
-                {/* BOTÓN DE EXPORTACIÓN */}
                 <button onClick={exportToCSV} className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 px-4 py-1.5 rounded-lg shadow-md transition-colors flex items-center gap-2 font-bold">
                   ⬇️ Exportar CSV
                 </button>
@@ -400,9 +420,16 @@ export default function Page() {
             <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wide flex items-center gap-2">
               <span>🗄️</span> BANDEJA DE ACCIÓN OPERATIVA (PostgreSQL)
             </h3>
-            <span className="bg-emerald-950 text-emerald-400 text-xs px-2.5 py-1 rounded-full border border-emerald-800 font-bold">
-              {persistentTasks.length} Tareas Persistidas
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="bg-emerald-950 text-emerald-400 text-xs px-2.5 py-1 rounded-full border border-emerald-800 font-bold">
+                {persistentTasks.length} Tareas Persistidas
+              </span>
+              {persistentTasks.length > 0 && (
+                <button onClick={handleClearAllTasks} className="bg-rose-950/50 hover:bg-rose-900 text-rose-300 border border-rose-800 text-xs px-3 py-1 rounded-lg font-bold transition-colors">
+                  🧹 Limpiar Bandeja
+                </button>
+              )}
+            </div>
           </div>
 
           {persistentTasks.length === 0 ? (
@@ -437,6 +464,15 @@ export default function Page() {
                       <option value="EN_INVESTIGACION">EN INVESTIGACIÓN</option>
                       <option value="RESUELTO">RESUELTO</option>
                     </select>
+
+                    {/* BOTÓN DE BORRADO INDIVIDUAL */}
+                    <button
+                      onClick={() => handleDeleteTask(t.id)}
+                      className="bg-slate-900 hover:bg-rose-950 text-slate-400 hover:text-rose-300 border border-slate-800 hover:border-rose-800 p-1.5 rounded-lg transition-colors text-xs"
+                      title="Eliminar tarea"
+                    >
+                      🗑️
+                    </button>
                   </div>
                 </div>
               ))}
