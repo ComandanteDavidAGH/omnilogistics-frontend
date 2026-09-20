@@ -1,109 +1,97 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api';
-import DynamicCharts from './DynamicCharts.js';
+import { ESTADO, dateTime, money, pct } from '../lib/format';
+import { ErrorBox } from './NewAudit';
+import Results from './Results';
 
 export default function History({ apiKey }) {
-  const [audits, setAudits] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState(null);
+  const [items, setItems] = useState(null);
+  const [selected, setSelected] = useState(null);
+  const [error, setError] = useState(null);
 
-  // Clave administrativa activa
-  const effectiveKey = apiKey || 'sk_admin_genesis_2026_x99';
-
-  const fetchHistory = async () => {
+  const load = useCallback(async () => {
+    setError(null);
     try {
-      setLoading(true);
-      setErrorMsg(null);
-      
-      // 1. Consultar con la clave activa
-      let realAudits = await api.listAudits(effectiveKey);
-      
-      // 2. Si no encuentra nada, intentar con el Tenant por defecto (malla de seguridad)
-      if (!realAudits || realAudits.length === 0) {
-        const fallbackAudits = await api.listAudits('DEFAULT_TENANT');
-        if (fallbackAudits && fallbackAudits.length > 0) {
-          realAudits = fallbackAudits;
-        }
-      }
-
-      setAudits(realAudits || []);
-    } catch (err) {
-      console.error('Error al cargar historial:', err);
-      setErrorMsg(err.message || 'Error al conectar con la base de datos.');
-    } finally {
-      setLoading(false);
+      setItems((await api.listAudits(apiKey)).items);
+    } catch (e) {
+      setError(e);
     }
-  };
-
-  useEffect(() => {
-    fetchHistory();
   }, [apiKey]);
 
-  if (loading) {
+  useEffect(() => { load(); }, [load]);
+
+  async function open(id) {
+    setError(null);
+    try {
+      setSelected(await api.getAudit(apiKey, id));
+    } catch (e) {
+      setError(e);
+    }
+  }
+
+  async function remove(id) {
+    if (!window.confirm('Se eliminará esta auditoría, sus hallazgos y sus tareas. ¿Continuar?')) return;
+    try {
+      await api.deleteAudit(apiKey, id);
+      setSelected(null);
+      load();
+    } catch (e) {
+      setError(e);
+    }
+  }
+
+  if (selected) {
     return (
-      <div className="bg-slate-900 border border-slate-800 p-8 rounded-xl text-center text-slate-400">
-        ⏳ Cargando historial de auditorías desde la base de datos...
+      <div className="space-y-4">
+        <div className="flex gap-3">
+          <button type="button" onClick={() => setSelected(null)} className="text-sm text-slate-300 hover:text-white underline underline-offset-2">← Volver al historial</button>
+          <button type="button" onClick={() => remove(selected.id)} className="text-sm text-rose-400 hover:text-rose-300 underline underline-offset-2">Eliminar esta auditoría</button>
+        </div>
+        <Results audit={selected} apiKey={apiKey} />
       </div>
     );
   }
-
-  if (errorMsg) {
-    return (
-      <div className="bg-slate-900 border border-rose-900/50 p-6 rounded-xl text-center">
-        <h3 className="text-rose-400 font-bold mb-2">⚠️ Error al consultar historial</h3>
-        <p className="text-slate-400 text-sm mb-4">{errorMsg}</p>
-        <button onClick={fetchHistory} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs rounded-lg font-bold">
-          🔄 Reintentar conexión
-        </button>
-      </div>
-    );
-  }
-
-  if (!audits || audits.length === 0) {
-    return (
-      <div className="bg-slate-900 border border-slate-800 p-8 rounded-xl text-center">
-        <h3 className="text-xl font-bold text-white mb-2">No se encontraron auditorías registradas</h3>
-        <p className="text-slate-400 text-sm mb-6">
-          Si acabas de procesar un archivo, presiona el botón para actualizar la consulta.
-        </p>
-        <button onClick={fetchHistory} className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs rounded-lg font-bold transition-colors shadow-lg">
-          🔄 Refrescar Historial
-        </button>
-      </div>
-    );
-  }
-
-  // Mapeo de resultados para el motor gráfico
-  const chartColumns = ['AUDITORIA', 'TOTAL_INGRESOS', 'TOTAL_COSTOS', 'DINERO_EN_RIESGO'];
-  const chartData = audits.map((a) => ({
-    AUDITORIA: `AUD-${a.id} (${a.filename ? a.filename.substring(0, 12) : 'Archivo'})`,
-    TOTAL_INGRESOS: a.financial_results?.totalIngresos || 0,
-    TOTAL_COSTOS: a.financial_results?.totalCostos || 0,
-    DINERO_EN_RIESGO: a.financial_results?.dineroEnRiesgo || 0,
-    CALIDAD_DATOS: a.quality_score || 0
-  }));
 
   return (
-    <div className="space-y-6">
-      <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl shadow-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-white mb-1">Historial de Auditorías Reales</h2>
-          <p className="text-slate-400 text-sm">
-            Se encontraron <strong className="text-emerald-400">{audits.length}</strong> auditorías procesadas en la base de datos SQL.
-          </p>
+    <div className="space-y-4">
+      <ErrorBox error={error} />
+      {items === null && !error && <p className="text-sm text-slate-400">Cargando…</p>}
+      {items?.length === 0 && (
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 text-sm text-slate-400">
+          Aún no hay auditorías. Sube tu primer archivo en «Nueva auditoría».
         </div>
-        <button onClick={fetchHistory} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-lg border border-slate-700 transition-colors flex items-center gap-2">
-          <span>🔄</span> Actualizar
-        </button>
-      </div>
-
-      <DynamicCharts 
-        columns={chartColumns} 
-        data={chartData} 
-        yearA="2025" 
-        yearB="2026" 
-      />
+      )}
+      {items?.length > 0 && (
+        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs text-slate-400">
+              <tr>
+                <th className="px-4 py-2.5 font-medium">Archivo</th>
+                <th className="px-3 py-2.5 font-medium">Fecha</th>
+                <th className="px-3 py-2.5 font-medium">Estado</th>
+                <th className="px-3 py-2.5 font-medium text-right">Margen</th>
+                <th className="px-3 py-2.5 font-medium text-right">Dinero en riesgo</th>
+                <th className="px-3 py-2.5 font-medium text-right">Hallazgos</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((a) => (
+                <tr key={a.id} className="border-t border-slate-800 hover:bg-slate-800/40">
+                  <td className="px-4 py-2.5">
+                    <button type="button" onClick={() => open(a.id)} className="text-emerald-400 hover:text-emerald-300 underline underline-offset-2 text-left">{a.filename}</button>
+                  </td>
+                  <td className="px-3 py-2.5 text-slate-400 whitespace-nowrap">{dateTime(a.timestamp)}</td>
+                  <td className="px-3 py-2.5 text-slate-300">{(ESTADO[a.estado] || {}).label || a.estado}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums">{pct(a.margenGlobal)}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums">{money(a.dineroEnRiesgo)}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums">{a.totalHallazgos}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,13 +1,11 @@
 'use client';
-
 import { useEffect, useState } from 'react';
-import { api } from './lib/api.js';
-
-import LoginGate from './components/LoginGate.jsx';
-import NewAudit from './components/NewAudit.jsx';
-import History from './components/History.jsx';
-import Tasks from './components/Tasks.jsx';
-import Settings from './components/Settings.jsx';
+import { api } from './lib/api';
+import LoginGate from './components/LoginGate';
+import NewAudit from './components/NewAudit';
+import History from './components/History';
+import Tasks from './components/Tasks';
+import Settings from './components/Settings';
 
 const TABS = [
   { id: 'new', label: 'Nueva auditoría' },
@@ -25,15 +23,9 @@ export default function Page() {
 
   useEffect(() => {
     const saved = typeof window !== 'undefined' ? sessionStorage.getItem(STORAGE_KEY) : null;
-    if (!saved) {
-      setReady(true);
-      return;
-    }
+    if (!saved) { setReady(true); return; }
     api.me(saved)
-      .then((m) => {
-        setApiKey(saved);
-        setMe(m);
-      })
+      .then((m) => { setApiKey(saved); setMe(m); })
       .catch(() => sessionStorage.removeItem(STORAGE_KEY))
       .finally(() => setReady(true));
   }, []);
@@ -64,23 +56,15 @@ export default function Page() {
             <p className="text-xs text-slate-400">Inteligencia económica para transporte · motor {me.engine_version}</p>
           </div>
         </div>
-        <button type="button" onClick={logout} className="text-sm text-slate-400 hover:text-slate-200 underline underline-offset-2">
-          Salir
-        </button>
+        <button type="button" onClick={logout} className="text-sm text-slate-400 hover:text-slate-200 underline underline-offset-2">Salir</button>
       </header>
 
       <nav className="border-b border-slate-800 bg-slate-950 px-6" aria-label="Secciones">
         <ul className="flex flex-wrap gap-1">
           {TABS.map((t) => (
             <li key={t.id}>
-              <button
-                type="button"
-                onClick={() => setTab(t.id)}
-                aria-current={tab === t.id ? 'page' : undefined}
-                className={`px-4 py-3 text-sm border-b-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${
-                  tab === t.id ? 'border-emerald-500 text-white font-medium' : 'border-transparent text-slate-400 hover:text-slate-200'
-                }`}
-              >
+              <button type="button" onClick={() => setTab(t.id)} aria-current={tab === t.id ? 'page' : undefined}
+                className={`px-4 py-3 text-sm border-b-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${tab === t.id ? 'border-emerald-500 text-white font-medium' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>
                 {t.label}
               </button>
             </li>

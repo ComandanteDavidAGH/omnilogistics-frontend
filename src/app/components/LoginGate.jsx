@@ -1,76 +1,59 @@
 'use client';
 import { useState } from 'react';
+import { api } from '../lib/api';
 
 export default function LoginGate({ onLogin }) {
   const [key, setKey] = useState('');
   const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
 
-  function handleSubmit(e) {
+  async function submit(e) {
     e.preventDefault();
-    const finalKey = key.trim();
-    if (!finalKey) return;
-
-    setLoading(true);
+    setBusy(true);
     setError(null);
-
-    // BYPASS ABSOLUTO: No toca internet, ni archivos externos. Validación 100% local.
-    if (finalKey.startsWith('sk_')) {
-      setTimeout(() => {
-        onLogin(finalKey, {
-          name: 'OmniLogistics Enterprise',
-          engine_version: '1.0',
-          config: {}
-        });
-      }, 500); // Pequeña pausa para simular carga
-    } else {
-      setLoading(false);
-      setError('Clave inválida. Debe empezar con sk_');
+    try {
+      const me = await api.me(key.trim());
+      onLogin(key.trim(), me);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
     }
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 text-slate-100">
-      <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-2xl space-y-6">
-        <div className="text-center space-y-2">
-          <div className="inline-block bg-emerald-600 text-white font-extrabold text-xs px-3 py-1 rounded-full uppercase tracking-wider">
-            GENESIS CORE v1.0
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight text-white">Acceso al Sistema</h1>
-          <p className="text-sm text-slate-400">Ingresa tu API Key de cliente para continuar</p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-6">
+      <form onSubmit={submit} className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4 shadow-lg">
+        <div className="flex items-center gap-3">
+          <div className="bg-emerald-600 text-white font-bold px-2.5 py-1.5 rounded-lg text-sm">GENESIS</div>
           <div>
-            <label htmlFor="apiKeyInput" className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-              API Key (sk_...)
-            </label>
-            <input
-              id="apiKeyInput"
-              type="password"
-              value={key}
-              onChange={(e) => setKey(e.target.value)}
-              placeholder="sk_admin_genesis_..."
-              required
-              className="w-full px-4 py-3 bg-slate-950 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors font-mono text-sm"
-            />
+            <h1 className="text-base font-semibold">Inteligencia económica para transporte</h1>
           </div>
-
-          {error && (
-            <div className="p-3 bg-rose-950/50 border border-rose-800/60 rounded-lg text-xs text-rose-300">
-              {error}
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading || !key.trim()}
-            className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:hover:bg-emerald-600 text-white font-semibold rounded-lg text-sm transition-colors shadow-lg"
-          >
-            {loading ? 'Verificando...' : 'Ingresar'}
-          </button>
-        </form>
-      </div>
+        </div>
+        <label className="block text-sm text-slate-300" htmlFor="apikey">
+          Clave de acceso de tu empresa
+        </label>
+        <input
+          id="apikey"
+          type="password"
+          autoComplete="off"
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          placeholder="gk_..."
+          className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+        />
+        {error && <p role="alert" className="text-sm text-rose-300">{error}</p>}
+        <button
+          type="submit"
+          disabled={busy || key.trim().length < 8}
+          className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:text-slate-400 text-white text-sm font-semibold py-2 rounded-lg"
+        >
+          {busy ? 'Verificando…' : 'Entrar'}
+        </button>
+        <p className="text-xs text-slate-500">
+          La clave te la entrega el administrador de la plataforma. Se guarda solo mientras esta pestaña esté abierta.
+        </p>
+      </form>
     </div>
   );
 }

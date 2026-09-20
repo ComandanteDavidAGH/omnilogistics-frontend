@@ -1,4 +1,4 @@
-const BASE = 'https://omnilogistics-backend-6bbn.onrender.com';
+const BASE = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 
 export class ApiError extends Error {
   constructor(message, { code, status, requestId } = {}) {
@@ -10,10 +10,10 @@ export class ApiError extends Error {
 }
 
 async function request(path, { method = 'GET', apiKey, json, form, raw = false, timeoutMs = 120000 } = {}) {
-  const headers = {
-    'x-tenant-id': apiKey || 'DEFAULT_TENANT',
-  };
-  if (apiKey) headers['X-API-Key'] = apiKey;
+  const headers = {};
+  if (apiKey) {
+    headers['X-API-Key'] = apiKey;
+  }
 
   let body;
   if (json !== undefined) {
@@ -31,7 +31,7 @@ async function request(path, { method = 'GET', apiKey, json, form, raw = false, 
   } catch (e) {
     const timedOut = e && e.name === 'AbortError';
     throw new ApiError(
-      timedOut ? 'El análisis tardó demasiado.' : 'No se pudo conectar con el servidor backend.',
+      timedOut ? 'El análisis tardó demasiado tiempo.' : 'No se pudo conectar con el servidor backend.',
       { code: timedOut ? 'TIMEOUT' : 'RED' }
     );
   } finally {
@@ -39,81 +39,63 @@ async function request(path, { method = 'GET', apiKey, json, form, raw = false, 
   }
 
   if (!res.ok) {
-    let info = {};
-    try { info = (await res.json()).detail || (await res.json()).error || {}; } catch { }
-    throw new ApiError(typeof info === 'string' ? info : (info.message || `Error ${res.status}`), {
+    const payload = await res.json().catch(() => ({}));
+    const info = payload.detail || payload.error || {};
+    const msg = typeof info === 'string' ? info : (info.message || `Error ${res.status}`);
+    throw new ApiError(msg, {
       code: info.code,
       status: res.status,
-      requestId: info.request_id,
+      requestId: payload.request_id || info.request_id,
     });
   }
-  return raw ? res : res.json();
+
+  if (raw) return res;
+  return res.json();
 }
 
 export const api = {
-  me: async (apiKey) => {
-    const key = apiKey ? apiKey.trim() : '';
-    if (!key.startsWith('sk_')) throw new Error('API Key no válida. Debe iniciar con sk_');
-    return { name: 'OmniLogistics Enterprise', engine_version: '1.0', config: {} };
-  },
+  me: (apiKey) => request('/api/v1/me', { apiKey }),
 
-  updateConfig: (apiKey, config) => Promise.resolve({ ok: true }),
+  updateConfig: (apiKey, config) =>
+    request('/api/v1/config', { method: 'PUT', apiKey, json: config }),
 
   understand: (apiKey, file) => {
     const form = new FormData();
     form.append('file', file);
-    return request('/api/v1/data-understanding', { method: 'POST', apiKey, form });
+    return request('/api/v1/understand', { method: 'POST', apiKey, form });
   },
 
-  // TRADUCTOR DE MAPEO CON PROTECCIÓN ANTI-DUPLICADOS
   createAudit: (apiKey, file, mapping) => {
-    const cleanMapping = {};
-    
-    if (mapping && typeof mapping === 'object') {
-      Object.entries(mapping).forEach(([sheetName, sheetData]) => {
-        cleanMapping[sheetName] = {};
-        // Memoria para rastrear qué destinos ya usamos en esta hoja
-        const usedCanonicals = new Set();
-
-        if (sheetData && sheetData.fields_mapping) {
-          Object.entries(sheetData.fields_mapping).forEach(([origCol, mapInfo]) => {
-            const canonical = typeof mapInfo === 'string' ? mapInfo : mapInfo?.canonical;
-            
-            if (canonical && canonical !== 'IGNORE' && canonical !== 'UNKNOWN') {
-              // ESCUDO: Solo enviamos a Python si este destino NO se ha usado antes en esta hoja
-              if (!usedCanonicals.has(canonical)) {
-                cleanMapping[sheetName][origCol] = canonical;
-                usedCanonicals.add(canonical); // Lo marcamos como usado
-              }
-            }
-          });
-        }
-      });
-    }
-
     const form = new FormData();
     form.append('file', file);
-    form.append('mapping', JSON.stringify(cleanMapping));
-    return request('/api/procesar-matriz', { method: 'POST', apiKey, form });
+    form.append('mapping', JSON.stringify(mapping));
+    return request('/api/v1/audits', { method: 'POST', apiKey, form });
   },
 
-  listAudits: async (apiKey) => {
-    try { return await request('/api/v1/audit-records', { apiKey }); } catch { return []; }
+  listAudits: (apiKey) => request('/api/v1/audits', { apiKey }),
+
+  getAudit: (apiKey, id) => request(`/api/v1/audits/${id}`, { apiKey }),
+
+  deleteAudit: (apiKey, id) => request(`/api/v1/audits/${id}`, { method: 'DELETE', apiKey }),
+
+  downloadAudit: async (apiKey, id) => {
+    const res = await request(`/api/v1/audits/${id}/export`, { apiKey, raw: true });
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Auditoria_${id}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
   },
 
-  listTasks: async (apiKey) => {
-    try { return await request('/api/v1/action-tasks', { apiKey }); } catch { return []; }
+  listTasks: (apiKey, status = '') => {
+    const q = status ? `?status=${encodeURIComponent(status)}` : '';
+    return request(`/api/v1/tasks${q}`, { apiKey });
   },
 
-  updateTask: (apiKey, id, newStatus) => {
-    return request(`/api/v1/action-tasks/${id}`, { 
-      method: 'PATCH', 
-      apiKey, 
-      json: { new_status: newStatus } 
-    });
-  },
-
-  deleteTask: (apiKey, id) => {
-    return request(`/api/v1/action-tasks/${id}`, { method: 'DELETE', apiKey });
-  },
+  updateTask: (apiKey, id, body) =>
+    request(`/api/v1/tasks/${id}`, { method: 'PATCH', apiKey, json: body }),
 };
