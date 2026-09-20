@@ -65,17 +65,26 @@ export const api = {
     return request('/api/v1/data-understanding', { method: 'POST', apiKey, form });
   },
 
-  // TRADUCTOR DE MAPEO PARA PYTHON
+  // TRADUCTOR DE MAPEO CON PROTECCIÓN ANTI-DUPLICADOS
   createAudit: (apiKey, file, mapping) => {
     const cleanMapping = {};
+    
     if (mapping && typeof mapping === 'object') {
       Object.entries(mapping).forEach(([sheetName, sheetData]) => {
         cleanMapping[sheetName] = {};
+        // Memoria para rastrear qué destinos ya usamos en esta hoja
+        const usedCanonicals = new Set();
+
         if (sheetData && sheetData.fields_mapping) {
           Object.entries(sheetData.fields_mapping).forEach(([origCol, mapInfo]) => {
             const canonical = typeof mapInfo === 'string' ? mapInfo : mapInfo?.canonical;
+            
             if (canonical && canonical !== 'IGNORE' && canonical !== 'UNKNOWN') {
-              cleanMapping[sheetName][origCol] = canonical;
+              // ESCUDO: Solo enviamos a Python si este destino NO se ha usado antes en esta hoja
+              if (!usedCanonicals.has(canonical)) {
+                cleanMapping[sheetName][origCol] = canonical;
+                usedCanonicals.add(canonical); // Lo marcamos como usado
+              }
             }
           });
         }
