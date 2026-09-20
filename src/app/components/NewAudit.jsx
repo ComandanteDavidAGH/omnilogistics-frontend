@@ -1,62 +1,90 @@
 'use client';
-
 import { useState } from 'react';
-import { api } from '../lib/api.js';
+import { api } from '../lib/api';
+import MappingReview from './MappingReview';
 
 export default function NewAudit({ apiKey }) {
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState(null);
+  const [iaData, setIaData] = useState(null);
 
-  async function handleUpload(e) {
-    e.preventDefault();
+  const handleFile = (e) => {
+    if (e.target.files && e.target.files[0]) {
+      setFile(e.target.files[0]);
+    }
+  };
+
+  const handleStart = async () => {
     if (!file) return;
     setLoading(true);
-    setError(null);
     try {
+      // 1. Envía el archivo a la IA en Render
       const res = await api.understand(apiKey, file);
-      setResult(res);
+      // 2. Guarda la respuesta para mostrar el panel visual
+      setIaData(res);
     } catch (err) {
-      setError(err.message || 'Error al procesar el archivo');
+      alert('Error al analizar: ' + err.message);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleConfirm = async (mapping) => {
+    setLoading(true);
+    try {
+      // 3. Envía el mapeo confirmado para la auditoría final
+      await api.createAudit(apiKey, file, mapping);
+      alert('¡Auditoría procesada con éxito!');
+      setIaData(null);
+      setFile(null);
+    } catch (err) {
+      alert('Error al procesar: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Si ya tenemos los datos de la IA, mostramos el panel visual de MappingReview
+  if (iaData) {
+    return (
+      <MappingReview 
+        data={iaData} 
+        onConfirm={handleConfirm} 
+        onCancel={() => { setIaData(null); setFile(null); }} 
+      />
+    );
   }
 
+  // Pantalla inicial de subida de archivo
   return (
-    <div className="space-y-6">
-      <h2 className="text-xl font-bold text-white">Nueva Auditoría</h2>
-      <form onSubmit={handleUpload} className="space-y-4 max-w-xl bg-slate-900 p-6 border border-slate-800 rounded-xl">
-        <div>
-          <label htmlFor="auditFileInput" className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-            Seleccionar archivo Excel / CSV
-          </label>
-          <input
-            id="auditFileInput"
-            type="file"
-            onChange={(e) => setFile(e.target.files[0])}
-            className="block w-full text-sm text-slate-400 file:mr-4 file:py-2.5 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-emerald-600 file:text-white hover:file:bg-emerald-500 cursor-pointer"
-          />
+    <div className="max-w-3xl">
+      <h2 className="text-2xl font-bold text-white mb-6">Nueva Auditoría</h2>
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl">
+        <div className="space-y-6">
+          <div>
+            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
+              SELECCIONAR ARCHIVO EXCEL / CSV
+            </label>
+            <div className="flex items-center gap-4">
+              <label className="cursor-pointer bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors shadow-lg">
+                <span>Seleccionar archivo</span>
+                <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleFile} />
+              </label>
+              <span className="text-sm text-slate-400">
+                {file ? file.name : 'Ningún archivo seleccionado'}
+              </span>
+            </div>
+          </div>
+          
+          <button 
+            onClick={handleStart} 
+            disabled={!file || loading}
+            className="w-full py-3 px-4 bg-emerald-900 hover:bg-emerald-800 disabled:opacity-50 disabled:bg-slate-800 text-emerald-400 disabled:text-slate-500 font-bold rounded-lg text-sm transition-colors border border-emerald-800/50 shadow-inner"
+          >
+            {loading ? '⏳ Analizando archivo con IA (Puede tardar unos segundos)...' : 'Comenzar Auditoría'}
+          </button>
         </div>
-
-        {error && <div className="p-3 bg-rose-950/50 border border-rose-800 text-xs text-rose-300 rounded-lg">{error}</div>}
-
-        <button
-          type="submit"
-          disabled={loading || !file}
-          className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-semibold rounded-lg transition-colors shadow-lg"
-        >
-          {loading ? 'Analizando archivo...' : 'Comenzar Auditoría'}
-        </button>
-      </form>
-
-      {result && (
-        <div className="p-6 bg-slate-900 border border-slate-800 rounded-xl space-y-3">
-          <h3 className="font-bold text-emerald-400 text-sm">Resultado del Análisis</h3>
-          <pre className="text-xs text-slate-300 overflow-x-auto bg-slate-950 p-4 rounded-lg border border-slate-800">{JSON.stringify(result, null, 2)}</pre>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
