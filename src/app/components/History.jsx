@@ -1,8 +1,7 @@
 'use client';
-import DynamicCharts from './DynamicCharts';
+import DynamicCharts from './DynamicCharts.js';
 
 export default function History() {
-  // Datos de prueba simulando el resultado de tu backend para que el motor visual arranque
   const sampleData = [
     { ID_OPERACION: 'OP-001', INGRESO_2025: 4500, INGRESO_2026: 5200, GASTO_2025: 3000, GASTO_2026: 3100 },
     { ID_OPERACION: 'OP-002', INGRESO_2025: 3800, INGRESO_2026: 4100, GASTO_2025: 2500, GASTO_2026: 2800 },
@@ -23,12 +22,11 @@ export default function History() {
             ESTADO: COMPLETADO
           </span>
           <span className="text-slate-500 text-[10px] uppercase font-semibold tracking-wider">
-            ID: AUDIT-{Math.floor(Math.random() * 10000)}
+            ID: AUDIT-8921
           </span>
         </div>
       </div>
       
-      {/* Aquí inyectamos el motor gráfico que construiste */}
       <DynamicCharts 
         columns={sampleColumns} 
         data={sampleData} 
