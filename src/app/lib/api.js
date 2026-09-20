@@ -40,8 +40,8 @@ async function request(path, { method = 'GET', apiKey, json, form, raw = false, 
 
   if (!res.ok) {
     let info = {};
-    try { info = (await res.json()).error || {}; } catch { /* no json */ }
-    throw new ApiError(info.message || `Error ${res.status}`, {
+    try { info = (await res.json()).detail || (await res.json()).error || {}; } catch { }
+    throw new ApiError(typeof info === 'string' ? info : (info.message || `Error ${res.status}`), {
       code: info.code,
       status: res.status,
       requestId: info.request_id,
@@ -53,14 +53,8 @@ async function request(path, { method = 'GET', apiKey, json, form, raw = false, 
 export const api = {
   me: async (apiKey) => {
     const key = apiKey ? apiKey.trim() : '';
-    if (!key.startsWith('sk_')) {
-      throw new Error('API Key no válida. Debe iniciar con sk_');
-    }
-    return {
-      name: 'OmniLogistics Enterprise',
-      engine_version: '1.0',
-      config: {}
-    };
+    if (!key.startsWith('sk_')) throw new Error('API Key no válida. Debe iniciar con sk_');
+    return { name: 'OmniLogistics Enterprise', engine_version: '1.0', config: {} };
   },
 
   updateConfig: (apiKey, config) => Promise.resolve({ ok: true }),
@@ -71,31 +65,46 @@ export const api = {
     return request('/api/v1/data-understanding', { method: 'POST', apiKey, form });
   },
 
-  // === AQUÍ ESTÁ EL BYPASS PARA SIMULAR EL ÉXITO Y EVITAR EL 404 ===
-  createAudit: async (apiKey, file, mapping) => {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({
-          status: 'success',
-          message: 'Auditoría procesada y guardada con éxito',
-          id: 'AUDIT-' + Math.floor(Math.random() * 10000)
-        });
-      }, 1500); // Finge que está calculando por 1.5 segundos
-    });
+  // TRADUCTOR DE MAPEO PARA PYTHON
+  createAudit: (apiKey, file, mapping) => {
+    const cleanMapping = {};
+    if (mapping && typeof mapping === 'object') {
+      Object.entries(mapping).forEach(([sheetName, sheetData]) => {
+        cleanMapping[sheetName] = {};
+        if (sheetData && sheetData.fields_mapping) {
+          Object.entries(sheetData.fields_mapping).forEach(([origCol, mapInfo]) => {
+            const canonical = typeof mapInfo === 'string' ? mapInfo : mapInfo?.canonical;
+            if (canonical && canonical !== 'IGNORE' && canonical !== 'UNKNOWN') {
+              cleanMapping[sheetName][origCol] = canonical;
+            }
+          });
+        }
+      });
+    }
+
+    const form = new FormData();
+    form.append('file', file);
+    form.append('mapping', JSON.stringify(cleanMapping));
+    return request('/api/procesar-matriz', { method: 'POST', apiKey, form });
   },
 
   listAudits: async (apiKey) => {
     try { return await request('/api/v1/audit-records', { apiKey }); } catch { return []; }
   },
 
-  getAudit: (apiKey, id) => request(`/api/v1/audit-records/${id}`, { apiKey }),
-  deleteAudit: (apiKey, id) => request(`/api/v1/audit-records/${id}`, { method: 'DELETE', apiKey }),
-
   listTasks: async (apiKey) => {
     try { return await request('/api/v1/action-tasks', { apiKey }); } catch { return []; }
   },
 
-  updateTask: (apiKey, id, patch) => request(`/api/v1/action-tasks/${id}`, { method: 'PATCH', apiKey, json: patch }),
+  updateTask: (apiKey, id, newStatus) => {
+    return request(`/api/v1/action-tasks/${id}`, { 
+      method: 'PATCH', 
+      apiKey, 
+      json: { new_status: newStatus } 
+    });
+  },
 
-  async downloadAudit(apiKey, id) { return true; },
+  deleteTask: (apiKey, id) => {
+    return request(`/api/v1/action-tasks/${id}`, { method: 'DELETE', apiKey });
+  },
 };
