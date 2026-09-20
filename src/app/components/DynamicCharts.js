@@ -1,6 +1,10 @@
 'use client';
 import { useState, useMemo, useEffect } from 'react';
-import { ResponsiveContainer, BarChart, Bar, AreaChart, Area, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
+import { 
+  ResponsiveContainer, BarChart, Bar, AreaChart, Area, 
+  LineChart, Line, PieChart, Pie, Cell, 
+  XAxis, YAxis, Tooltip, CartesianGrid, Legend 
+} from 'recharts';
 
 export default function DynamicCharts({ columns, data, yearA, yearB }) {
   const [botApproved, setBotApproved] = useState(false);
@@ -8,8 +12,12 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
   const [metricChart1, setMetricChart1] = useState('');
   const [metricChart2, setMetricChart2] = useState('');
   const [activeTab, setActiveTab] = useState('');
+  // Empezamos con Barras y Líneas por defecto
   const [c1, setC1] = useState('bar');
-  const [c2, setC2] = useState('area');
+  const [c2, setC2] = useState('line');
+
+  // Paleta de colores para gráficos circulares
+  const PIE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4', '#f97316', '#ec4899'];
 
   const { textCols, numCols, hasSemana, hasCinta, hasYears } = useMemo(() => {
     if (!columns || !data || data.length === 0) return { textCols: [], numCols: [], hasSemana: false, hasCinta: false, hasYears: false };
@@ -179,8 +187,7 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
           ) : (
             <div className="bg-blue-950/30 border border-blue-800/50 p-4 rounded-md text-blue-200">
               <strong className="text-blue-400 block mb-1">📦 Diagnóstico: Base Estándar (Etapa 1 - Universal)</strong>
-              He detectado una base plana de datos (Logística, Inventario o Ventas). 
-              He apagado las deducciones bananeras para mantener la integridad de los datos puros.
+              He detectado una base plana de datos. He apagado las deducciones para mantener la integridad de los datos puros.
             </div>
           )}
         </div>
@@ -211,6 +218,7 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
     );
   }
 
+  // EL MOTOR DE GRÁFICOS AMPLIADO
   const renderChart = (type, metricKey, colorA, colorB) => {
     const kA = isUltra ? `${metricKey}_${yearA}` : metricKey;
     const kB = isUltra ? `${metricKey}_${yearB}` : metricKey;
@@ -229,6 +237,27 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
           </BarChart>
         );
       case 'line':
+        return (
+          <LineChart data={chartData} margin={{top: 10, right: 10, left: -20, bottom: 0}}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+            <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 9 }} />
+            <YAxis stroke="#64748b" tick={{ fontSize: 10 }} />
+            <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc', fontSize: '11px' }} />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Line name={isUltra ? `${metricKey} (${yearA})` : metricKey} type="monotone" dataKey={kA} stroke={colorA} strokeWidth={3} dot={{r:4}} activeDot={{r:6}} />
+            {isUltra && <Line name={`${metricKey} (${yearB})`} type="monotone" dataKey={kB} stroke={colorB} strokeWidth={3} dot={{r:4}} activeDot={{r:6}} />}
+          </LineChart>
+        );
+      case 'pie':
+        return (
+          <PieChart margin={{top: 0, right: 0, left: 0, bottom: 0}}>
+            <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc', fontSize: '11px' }} itemStyle={{ color: '#fff' }} />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Pie data={chartData} nameKey="name" dataKey={kA} cx="50%" cy="50%" outerRadius={75} innerRadius={35} label={!isUltra}>
+              {chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />)}
+            </Pie>
+          </PieChart>
+        );
       case 'area':
       default:
         return (
@@ -268,35 +297,45 @@ export default function DynamicCharts({ columns, data, yearA, yearB }) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* GRÁFICO 1 */}
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800/80">
           <div className="flex items-center justify-between pb-3 border-b border-slate-800/60 mb-4">
             <select value={metricChart1} onChange={(e) => setMetricChart1(e.target.value)} className="bg-slate-900 text-slate-100 text-[11px] font-bold rounded px-2 py-1 outline-none w-48 truncate border border-slate-700">
               {metricsList.map((m, idx) => <option key={idx} value={m}>{m}</option>)}
             </select>
+            {/* NUEVAS OPCIONES AÑADIDAS AQUÍ */}
             <select value={c1} onChange={(e) => setC1(e.target.value)} className="text-[10px] bg-slate-800 border border-slate-600 px-2 py-1 rounded-md text-slate-200 outline-none">
-              <option value="area">🌊 Áreas</option><option value="bar">📊 Barras</option>
+              <option value="bar">📊 Barras</option>
+              <option value="line">📈 Líneas</option>
+              <option value="area">🌊 Áreas</option>
+              <option value="pie">🍩 Circular</option>
             </select>
           </div>
-          <div className="h-60 w-full"><ResponsiveContainer width="100%" height="100%">{renderChart(c1, metricChart1, '#3b82f6', '#10b981')}</ResponsiveContainer></div>
+          <div className="h-64 w-full"><ResponsiveContainer width="100%" height="100%">{renderChart(c1, metricChart1, '#3b82f6', '#10b981')}</ResponsiveContainer></div>
         </div>
 
+        {/* GRÁFICO 2 */}
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800/80">
           <div className="flex items-center justify-between pb-3 border-b border-slate-800/60 mb-4">
             <select value={metricChart2} onChange={(e) => setMetricChart2(e.target.value)} className="bg-slate-900 text-slate-100 text-[11px] font-bold rounded px-2 py-1 outline-none w-48 truncate border border-slate-700">
               {metricsList.map((m, idx) => <option key={idx} value={m}>{m}</option>)}
             </select>
+            {/* NUEVAS OPCIONES AÑADIDAS AQUÍ */}
             <select value={c2} onChange={(e) => setC2(e.target.value)} className="text-[10px] bg-slate-800 border border-slate-600 px-2 py-1 rounded-md text-slate-200 outline-none">
-              <option value="bar">📊 Barras</option><option value="area">🌊 Áreas</option>
+              <option value="line">📈 Líneas</option>
+              <option value="bar">📊 Barras</option>
+              <option value="area">🌊 Áreas</option>
+              <option value="pie">🍩 Circular</option>
             </select>
           </div>
-          <div className="h-60 w-full"><ResponsiveContainer width="100%" height="100%">{renderChart(c2, metricChart2, '#f59e0b', '#8b5cf6')}</ResponsiveContainer></div>
+          <div className="h-64 w-full"><ResponsiveContainer width="100%" height="100%">{renderChart(c2, metricChart2, '#f59e0b', '#8b5cf6')}</ResponsiveContainer></div>
         </div>
       </div>
 
       <div className="mt-8 bg-slate-950 border border-slate-800 rounded-xl overflow-hidden">
         <div className="max-h-80 overflow-y-auto custom-scrollbar p-4 relative">
           <table className="w-full text-[10px] text-left text-slate-300 border-collapse whitespace-nowrap">
-            <thead className="uppercase bg-slate-950 text-slate-400 sticky top-0 shadow-md">
+            <thead className="uppercase bg-slate-950 text-slate-400 sticky top-0 shadow-md z-10">
               <tr>
                 <th className="px-4 py-3 border-b border-slate-700">{isUltra ? 'SEMANA - CINTA' : (botConfig.xAxis || 'Categoría')}</th>
                 {numCols.map((c, i) => <th key={i} className="px-4 py-3 border-b border-slate-700 text-blue-400">{c}</th>)}
