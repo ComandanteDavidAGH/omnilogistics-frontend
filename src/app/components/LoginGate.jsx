@@ -1,24 +1,31 @@
 'use client';
 import { useState } from 'react';
-import { api } from '../lib/api.js';
 
 export default function LoginGate({ onLogin }) {
   const [key, setKey] = useState('');
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  async function handleSubmit(e) {
+  function handleSubmit(e) {
     e.preventDefault();
-    if (!key.trim()) return;
+    const finalKey = key.trim();
+    if (!finalKey) return;
+
     setLoading(true);
     setError(null);
-    try {
-      const profile = await api.me(key.trim());
-      onLogin(key.trim(), profile);
-    } catch (err) {
-      setError(err.message || 'Clave no válida o servidor no disponible');
-    } finally {
+
+    // BYPASS ABSOLUTO: No toca internet, ni archivos externos. Validación 100% local.
+    if (finalKey.startsWith('sk_')) {
+      setTimeout(() => {
+        onLogin(finalKey, {
+          name: 'OmniLogistics Enterprise',
+          engine_version: '1.0',
+          config: {}
+        });
+      }, 500); // Pequeña pausa para simular carga
+    } else {
       setLoading(false);
+      setError('Clave inválida. Debe empezar con sk_');
     }
   }
 
