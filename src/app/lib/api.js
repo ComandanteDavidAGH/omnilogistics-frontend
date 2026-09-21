@@ -62,7 +62,7 @@ export const api = {
   understand: (apiKey, file) => {
     const form = new FormData();
     form.append('file', file);
-    return request('/api/v1/understand', { method: 'POST', apiKey, form });
+    return request('/api/v1/data-understanding', { method: 'POST', apiKey, form });
   },
 
   createAudit: (apiKey, file, mapping) => {
